@@ -90,6 +90,81 @@ function getNeighbors(note, depth) {
     return retNoteIds;
 }
 
+function getKeyrelMap(req) {
+    const mapRootNote = becca.getNote(req.params.noteId);
+    // if the map root itself has exclude attribute (journal typically) then there wouldn't be anything to display, so
+    // we'll just ignore it
+    const ignoreExcludeFromNoteMap = mapRootNote.hasLabel('excludeFromNoteMap');
+    let unfilteredNotes;
+
+    if (mapRootNote.type === 'search') {
+        // for search notes we want to consider the direct search results only without the descendants
+        unfilteredNotes = mapRootNote.getSearchResultNotes();
+    } else {
+        unfilteredNotes = mapRootNote.getSubtree({
+            includeArchived: false,
+            resolveSearch: true,
+            includeHidden: mapRootNote.isInHiddenSubtree()
+        }).notes;
+    }
+
+    const noteIds = new Set(
+        unfilteredNotes
+            .filter(note => ignoreExcludeFromNoteMap || !note.hasLabel('excludeFromNoteMap'))
+            .map(note => note.noteId)
+    );
+
+    if (mapRootNote.type === 'search') {
+        noteIds.delete(mapRootNote.noteId);
+    }
+
+    for (const noteId of getNeighbors(mapRootNote, 3)) {
+        noteIds.add(noteId);
+    }
+
+    const noteIdsArray = Array.from(noteIds)
+
+    const notes = noteIdsArray.map(noteId => {
+        const note = becca.getNote(noteId);
+
+        return [
+            note.noteId,
+            note.getTitleOrProtected(),
+            note.type,
+            note.getLabelValue('color')
+        ];
+    });
+
+    const links = Object.values(becca.attributes).filter(rel => {
+        if (rel.type !== 'relation' || rel.name === 'relationMapLink' || rel.name === 'template' || rel.name === 'inherit') {
+            return false;
+        }
+        else if (!noteIds.has(rel.noteId) || !noteIds.has(rel.value)) {
+            return false;
+        }
+        else if (rel.name === 'imageLink') {
+            const parentNote = becca.getNote(rel.noteId);
+
+            return !parentNote.getChildNotes().find(childNote => childNote.noteId === rel.value);
+        }
+        else {
+            return true;
+        }
+    })
+    .map(rel => ({
+        id: `${rel.noteId}-${rel.name}-${rel.value}`,
+        sourceNoteId: rel.noteId,
+        targetNoteId: rel.value,
+        name: rel.name
+    }));
+
+    return {
+        notes: notes,
+        noteIdToDescendantCountMap: buildDescendantCountMap(noteIdsArray),
+        links: links
+    };
+}
+
 function getLinkMap(req) {
     const mapRootNote = becca.getNote(req.params.noteId);
     // if the map root itself has exclude attribute (journal typically) then there wouldn't be anything to display, so
@@ -391,6 +466,7 @@ function getBacklinks(req) {
 module.exports = {
     getLinkMap,
     getTreeMap,
+    getKeyrelMap,
     getBacklinkCount,
     getBacklinks
 };

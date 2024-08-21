@@ -176,6 +176,7 @@ function register(app) {
 
     apiRoute(POST, '/api/note-map/:noteId/tree', noteMapRoute.getTreeMap);
     apiRoute(POST, '/api/note-map/:noteId/link', noteMapRoute.getLinkMap);
+    apiRoute(POST, '/api/note-map/:noteId/keyrel', noteMapRoute.getKeyrelMap);
     apiRoute(GET, '/api/note-map/:noteId/backlink-count', noteMapRoute.getBacklinkCount);
     apiRoute(GET, '/api/note-map/:noteId/backlinks', noteMapRoute.getBacklinks);
 

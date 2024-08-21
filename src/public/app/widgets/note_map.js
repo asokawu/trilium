@@ -31,7 +31,8 @@ const TPL = `<div class="note-map-widget" style="position: relative;">
     
     <div class="btn-group btn-group-sm map-type-switcher" role="group">
       <button type="button" class="btn bx bx-network-chart" title="Link Map" data-type="link"></button>
-      <button type="button" class="btn bx bx-sitemap" title="Tree map" data-type="tree"></button>
+      <button type="button" class="btn bx bx-sitemap" title="Tree Map" data-type="tree"></button>
+      <button type="button" class="btn bx bxl-graphql" title="KeyRel" data-type="keyrel"></button>
     </div>
 
     <div class="style-resolver"></div>
@@ -87,7 +88,11 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
             mutedTextColor: this.rgb2hex(this.$styleResolver.css("color"))
         };
 
-        this.mapType = this.note.getLabelValue("mapType") === "tree" ? "tree" : "link";
+        this.mapType = this.note.getLabelValue("mapType");// === "tree" ? "tree" : "link";
+        if (this.mapType == null) {
+            this.mapType = "link";
+        }
+
 
         await libraryLoader.requireLibrary(libraryLoader.FORCE_GRAPH);
 
@@ -115,7 +120,7 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
             .onNodeClick(node => appContext.tabManager.getActiveContext().setNote(node.id))
             .onNodeRightClick((node, e) => linkContextMenuService.openContextMenu(node.id, null, e));
 
-        if (this.mapType === 'link') {
+        if (this.mapType === 'link' || this.mapType === 'keyrel') {
             this.graph
                 .linkLabel(l => `${esc(l.source.name)} - <strong>${esc(l.name)}</strong> - ${esc(l.target.name)}`)
                 .linkCanvasObject((link, ctx) => this.paintLink(link, ctx))
@@ -324,6 +329,21 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
             }
         }
         else if (this.mapType === 'link') {
+            const noteIdToLinkCount = {};
+
+            for (const link of resp.links) {
+                noteIdToLinkCount[link.targetNoteId] = 1 + (noteIdToLinkCount[link.targetNoteId] || 0);
+            }
+
+            for (const [noteId] of resp.notes) {
+                this.noteIdToSizeMap[noteId] = 4;
+
+                if (noteId in noteIdToLinkCount) {
+                    this.noteIdToSizeMap[noteId] += Math.min(Math.pow(noteIdToLinkCount[noteId], 0.5), 15);
+                }
+            }
+        }
+        else if (this.mapType === 'keyrel') {
             const noteIdToLinkCount = {};
 
             for (const link of resp.links) {

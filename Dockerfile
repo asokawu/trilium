@@ -1,9 +1,6 @@
 # !!! Don't try to build this Dockerfile directly, run it through bin/build-docker.sh script !!!
 FROM node:16.19.1-alpine
 
-ENV HTTP_PROXY=http://172.17.0.1:10809
-ENV HTTPS_PROXY=http://172.17.0.1:10809
-
 # Create app directory
 WORKDIR /usr/src/app
 
@@ -11,6 +8,8 @@ WORKDIR /usr/src/app
 COPY . .
 
 COPY server-package.json package.json
+
+RUN set -eux && sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories
 
 # Install app dependencies
 RUN set -x \
@@ -23,10 +22,21 @@ RUN set -x \
     make \
     nasm \
     libpng-dev \
-    python3 \
-    && npm install \
+    python3 
+
+
+#ENV HTTP_PROXY=http://172.17.0.1:10809
+#ENV HTTPS_PROXY=http://172.17.0.1:10809
+# ENV HTTP_PROXY=http://172.0.0.1:10809
+# ENV HTTPS_PROXY=http://172.0.0.1:10809
+
+
+RUN set -x \
+    && npm config set proxy http://127.0.0.1:10809\
+    && npm config set https-proxy http://127.0.0.1:10809\
+    && npm install --verbose\
     && apk del .build-dependencies \
-    && npm run webpack \
+    && npm run webpack --verbose\
     && npm prune --omit=dev \
     && cp src/public/app/share.js src/public/app-dist/. \
     && cp -r src/public/app/doc_notes src/public/app-dist/. \
