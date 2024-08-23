@@ -1,6 +1,5 @@
 /** @param {BNote} note */
 function mapNoteToPojo(note) {
-    const contentMetadata = note.getContentMetadata();
     return {
         noteId: note.noteId,
         isProtected: note.isProtected,
@@ -15,9 +14,7 @@ function mapNoteToPojo(note) {
         childNoteIds: note.getChildNotes().map(ch => ch.noteId),
         parentBranchIds: note.getParentBranches().map(p => p.branchId),
         childBranchIds: note.getChildBranches().map(ch => ch.branchId),
-        attributes: note.getAttributes().map(attr => mapAttributeToPojo(attr)),
-        combinedUtcDateModified : note.utcDateModified > contentMetadata.utcDateModified ? note.utcDateModified : contentMetadata.utcDateModified,
-        combinedDateModified : note.utcDateModified > contentMetadata.utcDateModified ? note.dateModified : contentMetadata.dateModified
+        attributes: note.getAttributes().map(attr => mapAttributeToPojo(attr))
     };
 }
 
