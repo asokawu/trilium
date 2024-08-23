@@ -8,18 +8,16 @@ const TPL = `<div class="jump-to-note-dialog modal mx-auto" tabindex="-1" role="
     <div class="modal-dialog modal-lg" role="document">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Jump to note</h5>
+                <div class="input-group">
+                    <input class="jump-to-note-autocomplete form-control" placeholder="search for note by its name">
+                </div>
+
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
                 </button>
             </div>
             <div class="modal-body">
-                <div class="form-group">
-                    <label for="jump-to-note-autocomplete">Note</label>
-                    <div class="input-group">
-                        <input class="jump-to-note-autocomplete form-control" placeholder="search for note by its name">
-                    </div>
-                </div>
+                <div class="algolia-autocomplete-container jump-to-note-results"></div>
             </div>
             <div class="modal-footer">
                 <button class="show-in-full-text-button btn btn-sm">Search in full text <kbd>Ctrl+Enter</kbd></button>
@@ -40,6 +38,7 @@ export default class JumpToNoteDialog extends BasicWidget {
     doRender() {
         this.$widget = $(TPL);
         this.$autoComplete = this.$widget.find(".jump-to-note-autocomplete");
+        this.$results = this.$widget.find(".jump-to-note-results");
         this.$showInFullTextButton = this.$widget.find(".show-in-full-text-button");
         this.$showInFullTextButton.on('click', e => this.showInFullText(e));
 
@@ -56,7 +55,11 @@ export default class JumpToNoteDialog extends BasicWidget {
     }
 
     async refresh() {
-        noteAutocompleteService.initNoteAutocomplete(this.$autoComplete, {hideGoToSelectedNoteButton: true})
+        noteAutocompleteService.initNoteAutocomplete(this.$autoComplete, {
+            allowCreatingNotes: true,
+            hideGoToSelectedNoteButton: true,
+            container: this.$results
+        })
             // clear any event listener added in previous invocation of this function
             .off('autocomplete:noteselected')
             .on('autocomplete:noteselected', function (event, suggestion, dataset) {
@@ -67,10 +70,10 @@ export default class JumpToNoteDialog extends BasicWidget {
                 appContext.tabManager.getActiveContext().setNote(suggestion.notePath);
             });
 
-        // if you open the Jump To dialog soon after using it previously it can often mean that you
-        // actually want to search for the same thing (e.g. you opened the wrong note at first try)
+        // if you open the Jump To dialog soon after using it previously, it can often mean that you
+        // actually want to search for the same thing (e.g., you opened the wrong note at first try)
         // so we'll keep the content.
-        // if it's outside of this time limit then we assume it's a completely new search and show recent notes instead.
+        // if it's outside of this time limit, then we assume it's a completely new search and show recent notes instead.
         if (Date.now() - this.lastOpenedTs > KEEP_LAST_SEARCH_FOR_X_SECONDS * 1000) {
             noteAutocompleteService.showRecentNotes(this.$autoComplete);
         } else {
@@ -84,7 +87,7 @@ export default class JumpToNoteDialog extends BasicWidget {
     }
 
     showInFullText(e) {
-        // stop from propagating upwards (dangerous especially with ctrl+enter executable javascript notes)
+        // stop from propagating upwards (dangerous, especially with ctrl+enter executable javascript notes)
         e.preventDefault();
         e.stopPropagation();
 

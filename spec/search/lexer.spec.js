@@ -1,8 +1,11 @@
-const lex = require('../../src/services/search/services/lex');
+const lex = require('../../src/services/search/services/lex.js');
 
 describe("Lexer fulltext", () => {
     it("simple lexing", () => {
         expect(lex("hello world").fulltextTokens.map(t => t.token))
+            .toEqual(["hello", "world"]);
+
+        expect(lex("hello, world").fulltextTokens.map(t => t.token))
             .toEqual(["hello", "world"]);
     });
 
@@ -146,6 +149,11 @@ describe("Lexer expression", () => {
     it("negation of sub-expression", () => {
         expect(lex(`# not(#capital) and note.noteId != "root"`).expressionTokens.map(t => t.token))
             .toEqual(["#", "not", "(", "#capital", ")", "and", "note", ".", "noteid", "!=", "root"]);
+    });
+
+    it("order by multiple labels", () => {
+        expect(lex(`# orderby #a,#b`).expressionTokens.map(t => t.token))
+            .toEqual(["#", "orderby", "#a", ",", "#b"]);
     });
 });
 

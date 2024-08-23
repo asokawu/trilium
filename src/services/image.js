@@ -1,17 +1,17 @@
 "use strict";
 
-const becca = require('../becca/becca');
-const log = require('./log');
-const protectedSessionService = require('./protected_session');
-const noteService = require('./notes');
-const optionService = require('./options');
-const sql = require('./sql');
+const becca = require('../becca/becca.js');
+const log = require('./log.js');
+const protectedSessionService = require('./protected_session.js');
+const noteService = require('./notes.js');
+const optionService = require('./options.js');
+const sql = require('./sql.js');
 const jimp = require('jimp');
 const imageType = require('image-type');
 const sanitizeFilename = require('sanitize-filename');
 const isSvg = require('is-svg');
 const isAnimated = require('is-animated');
-const htmlSanitizer = require("./html_sanitizer");
+const htmlSanitizer = require('./html_sanitizer.js');
 
 async function processImage(uploadBuffer, originalName, shrinkImageSwitch) {
     const compressImages = optionService.getOptionBool("compressImages");
@@ -70,7 +70,7 @@ function updateImage(noteId, uploadBuffer, originalName) {
 
     const note = becca.getNote(noteId);
 
-    note.saveNoteRevision();
+    note.saveRevision();
 
     note.setLabel('originalFileName', originalName);
 
@@ -119,9 +119,7 @@ function saveImage(parentNoteId, uploadBuffer, originalName, shrinkImageSwitch, 
                 note.title = sanitizeFilename(originalName);
             }
 
-            note.save();
-
-            note.setContent(buffer);
+            note.setContent(buffer, { forceSave: true });
         });
     });
 
@@ -129,8 +127,56 @@ function saveImage(parentNoteId, uploadBuffer, originalName, shrinkImageSwitch, 
         fileName,
         note,
         noteId: note.noteId,
-        url: `api/images/${note.noteId}/${fileName}`
+        url: `api/images/${note.noteId}/${encodeURIComponent(fileName)}`
     };
+}
+
+function saveImageToAttachment(noteId, uploadBuffer, originalName, shrinkImageSwitch, trimFilename = false) {
+    log.info(`Saving image '${originalName}' as attachment into note '${noteId}'`);
+
+    if (trimFilename && originalName.length > 40) {
+        // https://github.com/zadam/trilium/issues/2307
+        originalName = "image";
+    }
+
+    const fileName = sanitizeFilename(originalName);
+    const note = becca.getNoteOrThrow(noteId);
+
+    let attachment = note.saveAttachment({
+        role: 'image',
+        mime: 'unknown',
+        title: fileName
+    });
+
+    // TODO: this is a quick-fix solution of a recursive bug - this is called from asyncPostProcessContent()
+    //       find some async way to do this - perhaps some global timeout with a Set of noteIds needing one more
+    //       run of asyncPostProcessContent
+    setTimeout(() => {
+        sql.transactional(() => {
+            const note = becca.getNoteOrThrow(noteId);
+            const noteService = require('../services/notes.js');
+            noteService.asyncPostProcessContent(note, note.getContent()); // to mark an unused attachment for deletion
+        });
+    }, 5000);
+
+    // resizing images asynchronously since JIMP does not support sync operation
+    processImage(uploadBuffer, originalName, shrinkImageSwitch).then(({buffer, imageFormat}) => {
+        sql.transactional(() => {
+            // re-read, might be changed in the meantime
+            attachment = becca.getAttachmentOrThrow(attachment.attachmentId);
+
+            attachment.mime = getImageMimeFromExtension(imageFormat.ext);
+
+            if (!originalName.includes(".")) {
+                originalName += `.${imageFormat.ext}`;
+                attachment.title = sanitizeFilename(originalName);
+            }
+
+            attachment.setContent(buffer, { forceSave: true });
+        });
+    });
+
+    return attachment;
 }
 
 async function shrinkImage(buffer, originalName) {
@@ -150,8 +196,8 @@ async function shrinkImage(buffer, originalName) {
         finalImageBuffer = buffer;
     }
 
-    // if resizing did not help with size then save the original
-    // (can happen when e.g. resizing PNG into JPEG)
+    // if resizing did not help with size, then save the original
+    // (can happen when e.g., resizing PNG into JPEG)
     if (finalImageBuffer.byteLength >= buffer.byteLength) {
         finalImageBuffer = buffer;
     }
@@ -175,7 +221,7 @@ async function resize(buffer, quality) {
 
     image.quality(quality);
 
-    // when converting PNG to JPG we lose alpha channel, this is replaced by white to match Trilium white background
+    // when converting PNG to JPG, we lose the alpha channel, this is replaced by white to match Trilium white background
     image.background(0xFFFFFFFF);
 
     const resultBuffer = await image.getBufferAsync(jimp.MIME_JPEG);
@@ -187,5 +233,6 @@ async function resize(buffer, quality) {
 
 module.exports = {
     saveImage,
+    saveImageToAttachment,
     updateImage
 };

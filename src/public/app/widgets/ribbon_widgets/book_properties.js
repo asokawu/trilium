@@ -72,7 +72,7 @@ export default class BookPropertiesWidget extends NoteContextAwareWidget {
 
         this.$expandChildrenButton = this.$widget.find('.expand-children-button');
         this.$expandChildrenButton.on('click', async () => {
-            if (!this.note.hasLabel('expanded')) {
+            if (!this.note.isLabelTruthy('expanded')) {
                 await attributeService.addLabel(this.noteId, 'expanded');
             }
 
@@ -101,14 +101,14 @@ export default class BookPropertiesWidget extends NoteContextAwareWidget {
 
     async toggleViewType(type) {
         if (type !== 'list' && type !== 'grid') {
-            throw new Error(`Invalid view type ${type}`);
+            throw new Error(`Invalid view type '${type}'`);
         }
 
         await attributeService.setLabel(this.noteId, 'viewType', type);
     }
 
     entitiesReloadedEvent({loadResults}) {
-        if (loadResults.getAttributes().find(attr => attr.noteId === this.noteId && attr.name === 'viewType')) {
+        if (loadResults.getAttributeRows().find(attr => attr.noteId === this.noteId && attr.name === 'viewType')) {
             this.refresh();
         }
     }

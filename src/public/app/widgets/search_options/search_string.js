@@ -2,6 +2,7 @@ import AbstractSearchOption from "./abstract_search_option.js";
 import SpacedUpdate from "../../services/spaced_update.js";
 import server from "../../services/server.js";
 import shortcutService from "../../services/shortcuts.js";
+import appContext from "../../components/app_context.js";
 
 const TPL = `
 <tr>
@@ -47,8 +48,8 @@ export default class SearchString extends AbstractSearchOption {
 
         shortcutService.bindElShortcut(this.$searchString, 'return', async () => {
             // this also in effect disallows new lines in query string.
-            // on one hand this makes sense since search string is a label
-            // on the other hand it could be nice for structuring long search string. It's probably a niche case though.
+            // on one hand, this makes sense since search string is a label
+            // on the other hand, it could be nice for structuring long search string. It's probably a niche case though.
             await this.spacedUpdate.updateNowIfNecessary();
 
             this.triggerCommand('refreshResults');
@@ -56,6 +57,7 @@ export default class SearchString extends AbstractSearchOption {
 
         this.spacedUpdate = new SpacedUpdate(async () => {
             const searchString = this.$searchString.val();
+            appContext.lastSearchString = searchString;
 
             await this.setAttribute('label', 'searchString', searchString);
 
@@ -84,6 +86,7 @@ export default class SearchString extends AbstractSearchOption {
     }
 
     focusOnSearchDefinitionEvent() {
-        this.$searchString.focus();
+        this.$searchString.val(this.$searchString.val().trim() || appContext.lastSearchString).focus().select();
+        this.spacedUpdate.scheduleUpdate();
     }
 }

@@ -8,6 +8,7 @@ import toastService from "../services/toast.js";
 import ws from "../services/ws.js";
 import bundleService from "../services/bundle.js";
 import froca from "../services/froca.js";
+import linkService from "../services/link.js";
 
 export default class Entrypoints extends Component {
     constructor() {
@@ -38,7 +39,7 @@ export default class Entrypoints extends Component {
 
         await ws.waitForMaxKnownEntityChangeId();
 
-        await appContext.tabManager.openTabWithNoteWithHoisting(note.noteId, true);
+        await appContext.tabManager.openTabWithNoteWithHoisting(note.noteId, {activate: true});
 
         appContext.triggerEvent('focusAndSelectTitle', {isNewNote: true});
     }
@@ -135,18 +136,16 @@ export default class Entrypoints extends Component {
         utils.reloadFrontendApp("Switching to mobile version");
     }
 
-    async openInWindowCommand({notePath, hoistedNoteId}) {
-        if (!hoistedNoteId) {
-            hoistedNoteId = 'root';
-        }
+    async openInWindowCommand({notePath, hoistedNoteId, viewScope}) {
+        const extraWindowHash = linkService.calculateHash({notePath, hoistedNoteId, viewScope});
 
         if (utils.isElectron()) {
             const {ipcRenderer} = utils.dynamicRequire('electron');
 
-            ipcRenderer.send('create-extra-window', {notePath, hoistedNoteId});
+            ipcRenderer.send('create-extra-window', { extraWindowHash });
         }
         else {
-            const url = `${window.location.protocol}//${window.location.host}${window.location.pathname}?extra=1#${notePath}`;
+            const url = `${window.location.protocol}//${window.location.host}${window.location.pathname}?extraWindow=1${extraWindowHash}`;
 
             window.open(url, '', 'width=1000,height=800');
         }
@@ -159,7 +158,7 @@ export default class Entrypoints extends Component {
     async runActiveNoteCommand() {
         const {ntxId, note} = appContext.tabManager.getActiveContext();
 
-        // ctrl+enter is also used elsewhere so make sure we're running only when appropriate
+        // ctrl+enter is also used elsewhere, so make sure we're running only when appropriate
         if (!note || note.type !== 'code') {
             return;
         }
@@ -183,8 +182,6 @@ export default class Entrypoints extends Component {
     }
 
     hideAllPopups() {
-        $(".tooltip").removeClass("show");
-
         if (utils.isDesktop()) {
             $(".aa-input").autocomplete("close");
         }
@@ -198,7 +195,7 @@ export default class Entrypoints extends Component {
         this.hideAllPopups();
     }
 
-    async forceSaveNoteRevisionCommand() {
+    async forceSaveRevisionCommand() {
         const noteId = appContext.tabManager.getActiveContextNoteId();
 
         await server.post(`notes/${noteId}/revision`);

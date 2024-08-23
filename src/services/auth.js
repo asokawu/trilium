@@ -1,12 +1,12 @@
 "use strict";
 
-const etapiTokenService = require("./etapi_tokens");
-const log = require('./log');
-const sqlInit = require('./sql_init');
-const utils = require('./utils');
-const passwordEncryptionService = require('./password_encryption');
-const config = require('./config');
-const passwordService = require("./password");
+const etapiTokenService = require('./etapi_tokens.js');
+const log = require('./log.js');
+const sqlInit = require('./sql_init.js');
+const utils = require('./utils.js');
+const passwordEncryptionService = require('./encryption/password_encryption.js');
+const config = require('./config.js');
+const passwordService = require('./encryption/password.js');
 
 const noAuthentication = config.General && config.General.noAuthentication === true;
 
@@ -23,7 +23,7 @@ function checkAuth(req, res, next) {
 }
 
 // for electron things which need network stuff
-// currently we're doing that for file upload because handling form data seems to be difficult
+//  currently, we're doing that for file upload because handling form data seems to be difficult
 function checkApiAuthOrElectron(req, res, next) {
     if (!req.session.loggedIn && !utils.isElectron() && !noAuthentication) {
         reject(req, res, "Logged in session not found");

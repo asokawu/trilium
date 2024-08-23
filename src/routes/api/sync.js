@@ -1,17 +1,16 @@
 "use strict";
 
-const syncService = require('../../services/sync');
-const syncUpdateService = require('../../services/sync_update');
-const entityChangesService = require('../../services/entity_changes');
-const sql = require('../../services/sql');
-const sqlInit = require('../../services/sql_init');
-const optionService = require('../../services/options');
-const contentHashService = require('../../services/content_hash');
-const log = require('../../services/log');
-const syncOptions = require('../../services/sync_options');
-const dateUtils = require('../../services/date_utils');
-const utils = require('../../services/utils');
-const ws = require('../../services/ws');
+const syncService = require('../../services/sync.js');
+const syncUpdateService = require('../../services/sync_update.js');
+const entityChangesService = require('../../services/entity_changes.js');
+const sql = require('../../services/sql.js');
+const sqlInit = require('../../services/sql_init.js');
+const optionService = require('../../services/options.js');
+const contentHashService = require('../../services/content_hash.js');
+const log = require('../../services/log.js');
+const syncOptions = require('../../services/sync_options.js');
+const utils = require('../../services/utils.js');
+const ws = require('../../services/ws.js');
 
 async function testSync() {
     try {
@@ -83,51 +82,14 @@ function forceFullSync() {
     syncService.sync();
 }
 
-function forceNoteSync(req) {
-    const noteId = req.params.noteId;
-
-    const now = dateUtils.utcNowDateTime();
-
-    sql.execute(`UPDATE notes SET utcDateModified = ? WHERE noteId = ?`, [now, noteId]);
-    entityChangesService.moveEntityChangeToTop('notes', noteId);
-
-    sql.execute(`UPDATE note_contents SET utcDateModified = ? WHERE noteId = ?`, [now, noteId]);
-    entityChangesService.moveEntityChangeToTop('note_contents', noteId);
-
-    for (const branchId of sql.getColumn("SELECT branchId FROM branches WHERE noteId = ?", [noteId])) {
-        sql.execute(`UPDATE branches SET utcDateModified = ? WHERE branchId = ?`, [now, branchId]);
-
-        entityChangesService.moveEntityChangeToTop('branches', branchId);
-    }
-
-    for (const attributeId of sql.getColumn("SELECT attributeId FROM attributes WHERE noteId = ?", [noteId])) {
-        sql.execute(`UPDATE attributes SET utcDateModified = ? WHERE attributeId = ?`, [now, attributeId]);
-
-        entityChangesService.moveEntityChangeToTop('attributes', attributeId);
-    }
-
-    for (const noteRevisionId of sql.getColumn("SELECT noteRevisionId FROM note_revisions WHERE noteId = ?", [noteId])) {
-        sql.execute(`UPDATE note_revisions SET utcDateModified = ? WHERE noteRevisionId = ?`, [now, noteRevisionId]);
-        entityChangesService.moveEntityChangeToTop('note_revisions', noteRevisionId);
-
-        sql.execute(`UPDATE note_revision_contents SET utcDateModified = ? WHERE noteRevisionId = ?`, [now, noteRevisionId]);
-        entityChangesService.moveEntityChangeToTop('note_revision_contents', noteRevisionId);
-    }
-
-    log.info(`Forcing note sync for ${noteId}`);
-
-    // not awaiting for the job to finish (will probably take a long time)
-    syncService.sync();
-}
-
 function getChanged(req) {
     const startTime = Date.now();
 
     let lastEntityChangeId = parseInt(req.query.lastEntityChangeId);
-    const clientinstanceId = req.query.instanceId;
+    const clientInstanceId = req.query.instanceId;
     let filteredEntityChanges = [];
 
-    while (filteredEntityChanges.length === 0) {
+    do {
         const entityChanges = sql.getRows(`
             SELECT *
             FROM entity_changes
@@ -140,20 +102,22 @@ function getChanged(req) {
             break;
         }
 
-        filteredEntityChanges = entityChanges.filter(ec => ec.instanceId !== clientinstanceId);
+        filteredEntityChanges = entityChanges.filter(ec => ec.instanceId !== clientInstanceId);
 
         if (filteredEntityChanges.length === 0) {
             lastEntityChangeId = entityChanges[entityChanges.length - 1].id;
         }
-    }
+    } while (filteredEntityChanges.length === 0);
 
     const entityChangeRecords = syncService.getEntityChangeRecords(filteredEntityChanges);
 
     if (entityChangeRecords.length > 0) {
         lastEntityChangeId = entityChangeRecords[entityChangeRecords.length - 1].entityChange.id;
+
+        log.info(`Returning ${entityChangeRecords.length} entity changes in ${Date.now() - startTime}ms`);
     }
 
-    const ret = {
+    return {
         entityChanges: entityChangeRecords,
         lastEntityChangeId,
         outstandingPullCount: sql.getValue(`
@@ -161,14 +125,8 @@ function getChanged(req) {
             FROM entity_changes 
             WHERE isSynced = 1 
               AND instanceId != ?
-              AND id > ?`, [clientinstanceId, lastEntityChangeId])
+              AND id > ?`, [clientInstanceId, lastEntityChangeId])
     };
-
-    if (ret.entityChanges.length > 0) {
-        log.info(`Returning ${ret.entityChanges.length} entity changes in ${Date.now() - startTime}ms`);
-    }
-
-    return ret;
 }
 
 const partialRequests = {};
@@ -190,12 +148,12 @@ function update(req) {
         }
 
         if (!partialRequests[requestId]) {
-            throw new Error(`Partial request ${requestId}, index ${pageIndex} of ${pageCount} of pages does not have expected record.`);
+            throw new Error(`Partial request ${requestId}, page ${pageIndex + 1} of ${pageCount} of pages does not have expected record.`);
         }
 
         partialRequests[requestId].payload += req.body;
 
-        log.info(`Receiving partial request ${requestId}, page index ${pageIndex} out of ${pageCount} pages.`);
+        log.info(`Receiving a partial request ${requestId}, page ${pageIndex + 1} out of ${pageCount} pages.`);
 
         if (pageIndex !== pageCount - 1) {
             return;
@@ -208,9 +166,7 @@ function update(req) {
 
     const {entities, instanceId} = body;
 
-    for (const {entityChange, entity} of entities) {
-        syncUpdateService.updateEntity(entityChange, entity, instanceId);
-    }
+    sql.transactional(() => syncUpdateService.updateEntities(entities, instanceId));
 }
 
 setInterval(() => {
@@ -224,7 +180,7 @@ setInterval(() => {
 }, 60 * 1000);
 
 function syncFinished() {
-    // after first sync finishes, the application is ready to be used
+    // after the first sync finishes, the application is ready to be used
     // this is meaningless but at the same time harmless (idempotent) for further syncs
     sqlInit.setDbAsInitialized();
 }
@@ -237,8 +193,7 @@ function queueSector(req) {
 }
 
 function checkEntityChanges() {
-    const consistencyChecks = require("../../services/consistency_checks");
-    consistencyChecks.runEntityChangesChecks();
+    require('../../services/consistency_checks.js').runEntityChangesChecks();
 }
 
 module.exports = {
@@ -247,7 +202,6 @@ module.exports = {
     syncNow,
     fillEntityChanges,
     forceFullSync,
-    forceNoteSync,
     getChanged,
     update,
     getStats,

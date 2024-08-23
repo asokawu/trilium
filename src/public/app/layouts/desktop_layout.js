@@ -22,7 +22,7 @@ import NoteIconWidget from "../widgets/note_icon.js";
 import SearchResultWidget from "../widgets/search_result.js";
 import ScrollingContainer from "../widgets/containers/scrolling_container.js";
 import RootContainer from "../widgets/containers/root_container.js";
-import NoteUpdateStatusWidget from "../widgets/note_update_status.js";
+import WatchedFileUpdateStatusWidget from "../widgets/watched_file_update_status.js";
 import SpacerWidget from "../widgets/spacer.js";
 import QuickSearchWidget from "../widgets/quick_search.js";
 import SplitNoteContainer from "../widgets/containers/split_note_container.js";
@@ -62,7 +62,7 @@ import ImportDialog from "../widgets/dialogs/import.js";
 import ExportDialog from "../widgets/dialogs/export.js";
 import MarkdownImportDialog from "../widgets/dialogs/markdown_import.js";
 import ProtectedSessionPasswordDialog from "../widgets/dialogs/protected_session_password.js";
-import NoteRevisionsDialog from "../widgets/dialogs/note_revisions.js";
+import RevisionsDialog from "../widgets/dialogs/revisions.js";
 import DeleteNotesDialog from "../widgets/dialogs/delete_notes.js";
 import InfoDialog from "../widgets/dialogs/info.js";
 import ConfirmDialog from "../widgets/dialogs/confirm.js";
@@ -71,12 +71,15 @@ import FloatingButtons from "../widgets/floating_buttons/floating_buttons.js";
 import RelationMapButtons from "../widgets/floating_buttons/relation_map_buttons.js";
 import MermaidExportButton from "../widgets/floating_buttons/mermaid_export_button.js";
 import LauncherContainer from "../widgets/containers/launcher_container.js";
-import NoteRevisionsButton from "../widgets/buttons/note_revisions_button.js";
+import RevisionsButton from "../widgets/buttons/revisions_button.js";
 import CodeButtonsWidget from "../widgets/floating_buttons/code_buttons.js";
 import ApiLogWidget from "../widgets/api_log.js";
 import HideFloatingButtonsButton from "../widgets/floating_buttons/hide_floating_buttons_button.js";
 import ScriptExecutorWidget from "../widgets/ribbon_widgets/script_executor.js";
 import MovePaneButton from "../widgets/buttons/move_pane_button.js";
+import UploadAttachmentsDialog from "../widgets/dialogs/upload_attachments.js";
+import CopyImageReferenceButton from "../widgets/floating_buttons/copy_image_reference_button.js";
+import ScrollPaddingWidget from "../widgets/scroll_padding.js";
 
 export default class DesktopLayout {
     constructor(customWidgets) {
@@ -132,8 +135,8 @@ export default class DesktopLayout {
                                     )
                                     .child(
                                         new RibbonContainer()
-                                            // order of the widgets matter. Some of these want to "activate" themselves
-                                            // when visible, when this happens to multiple of them, the first one "wins".
+                                            // the order of the widgets matter. Some of these want to "activate" themselves
+                                            // when visible. When this happens to multiple of them, the first one "wins".
                                             // promoted attributes should always win.
                                             .ribbon(new PromotedAttributesWidget())
                                             .ribbon(new ScriptExecutorWidget())
@@ -150,15 +153,16 @@ export default class DesktopLayout {
                                             .ribbon(new NoteMapRibbonWidget())
                                             .ribbon(new SimilarNotesWidget())
                                             .ribbon(new NoteInfoWidget())
-                                            .button(new NoteRevisionsButton())
+                                            .button(new RevisionsButton())
                                             .button(new NoteActionsWidget())
                                     )
                                     .child(new SharedInfoWidget())
-                                    .child(new NoteUpdateStatusWidget())
+                                    .child(new WatchedFileUpdateStatusWidget())
                                     .child(new FloatingButtons()
                                         .child(new EditButton())
                                         .child(new CodeButtonsWidget())
                                         .child(new RelationMapButtons())
+                                        .child(new CopyImageReferenceButton())
                                         .child(new MermaidExportButton())
                                         .child(new BacklinksWidget())
                                         .child(new HideFloatingButtonsButton())
@@ -172,6 +176,7 @@ export default class DesktopLayout {
                                             .child(new NoteListWidget())
                                             .child(new SearchResultWidget())
                                             .child(new SqlResultWidget())
+                                            .child(new ScrollPaddingWidget())
                                     )
                                     .child(new ApiLogWidget())
                                     .child(new FindWidget())
@@ -205,9 +210,10 @@ export default class DesktopLayout {
             .child(new MoveToDialog())
             .child(new ImportDialog())
             .child(new ExportDialog())
+            .child(new UploadAttachmentsDialog())
             .child(new MarkdownImportDialog())
             .child(new ProtectedSessionPasswordDialog())
-            .child(new NoteRevisionsDialog())
+            .child(new RevisionsDialog())
             .child(new DeleteNotesDialog())
             .child(new InfoDialog())
             .child(new ConfirmDialog())

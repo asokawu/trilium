@@ -1,17 +1,17 @@
 const http = require("http");
 const ini = require("ini");
 const fs = require("fs");
-const dataDir = require("./src/services/data_dir");
+const dataDir = require('./src/services/data_dir.js');
 const config = ini.parse(fs.readFileSync(dataDir.CONFIG_INI_PATH, 'utf-8'));
 
-if (config.https) {
+if (config.Network.https) {
     // built-in TLS (terminated by trilium) is not supported yet, PRs are welcome
     // for reverse proxy terminated TLS this will works since config.https will be false
     process.exit(0);
 }
 
-const port = require('./src/services/port');
-const host = require('./src/services/host');
+const port = require('./src/services/port.js');
+const host = require('./src/services/host.js');
 
 const options = { timeout: 2000 };
 

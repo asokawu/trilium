@@ -1,21 +1,21 @@
-const becca = require("../becca/becca");
-const utils = require("../services/utils");
-const eu = require("./etapi_utils");
-const mappers = require("./mappers");
-const noteService = require("../services/notes");
-const TaskContext = require("../services/task_context");
-const v = require("./validators");
-const searchService = require("../services/search/services/search");
-const SearchContext = require("../services/search/search_context");
-const zipExportService = require("../services/export/zip");
-const zipImportService = require("../services/import/zip");
+const becca = require('../becca/becca.js');
+const utils = require('../services/utils.js');
+const eu = require('./etapi_utils.js');
+const mappers = require('./mappers.js');
+const noteService = require('../services/notes.js');
+const TaskContext = require('../services/task_context.js');
+const v = require('./validators.js');
+const searchService = require('../services/search/services/search.js');
+const SearchContext = require('../services/search/search_context.js');
+const zipExportService = require('../services/export/zip.js');
+const zipImportService = require('../services/import/zip.js');
 
 function register(router) {
     eu.route(router, 'get', '/etapi/notes', (req, res, next) => {
         const {search} = req.query;
 
         if (!search?.trim()) {
-            throw new eu.EtapiError(400, 'SEARCH_QUERY_PARAM_MANDATORY', "'search' query parameter is mandatory");
+            throw new eu.EtapiError(400, 'SEARCH_QUERY_PARAM_MANDATORY', "'search' query parameter is mandatory.");
         }
 
         const searchParams = parseSearchParams(req);
@@ -51,7 +51,8 @@ function register(router) {
         'prefix': [v.notNull, v.isString],
         'isExpanded': [v.notNull, v.isBoolean],
         'noteId': [v.notNull, v.isValidEntityId],
-        'branchId': [v.notNull, v.isValidEntityId],
+        'dateCreated': [v.notNull, v.isString, v.isLocalDateTime],
+        'utcDateCreated': [v.notNull, v.isString, v.isUtcDateTime]
     };
 
     eu.route(router, 'post' ,'/etapi/create-note', (req, res, next) => {
@@ -75,14 +76,16 @@ function register(router) {
     const ALLOWED_PROPERTIES_FOR_PATCH = {
         'title': [v.notNull, v.isString],
         'type': [v.notNull, v.isString],
-        'mime': [v.notNull, v.isString]
+        'mime': [v.notNull, v.isString],
+        'dateCreated': [v.notNull, v.isString, v.isLocalDateTime],
+        'utcDateCreated': [v.notNull, v.isString, v.isUtcDateTime]
     };
 
     eu.route(router, 'patch' ,'/etapi/notes/:noteId', (req, res, next) => {
-        const note = eu.getAndCheckNote(req.params.noteId)
+        const note = eu.getAndCheckNote(req.params.noteId);
 
         if (note.isProtected) {
-            throw new eu.EtapiError(400, "NOTE_IS_PROTECTED", `Note '${req.params.noteId}' is protected and cannot be modified through ETAPI`);
+            throw new eu.EtapiError(400, "NOTE_IS_PROTECTED", `Note '${req.params.noteId}' is protected and cannot be modified through ETAPI.`);
         }
 
         eu.validateAndPatch(note, req.body, ALLOWED_PROPERTIES_FOR_PATCH);
@@ -96,7 +99,7 @@ function register(router) {
 
         const note = becca.getNote(noteId);
 
-        if (!note || note.isDeleted) {
+        if (!note) {
             return res.sendStatus(204);
         }
 
@@ -107,6 +110,10 @@ function register(router) {
 
     eu.route(router, 'get', '/etapi/notes/:noteId/content', (req, res, next) => {
         const note = eu.getAndCheckNote(req.params.noteId);
+
+        if (note.isProtected) {
+            throw new eu.EtapiError(400, "NOTE_IS_PROTECTED", `Note '${req.params.noteId}' is protected and content cannot be read through ETAPI.`);
+        }
 
         const filename = utils.formatDownloadTitle(note.title, note.type, note.mime);
 
@@ -121,6 +128,10 @@ function register(router) {
     eu.route(router, 'put', '/etapi/notes/:noteId/content', (req, res, next) => {
         const note = eu.getAndCheckNote(req.params.noteId);
 
+        if (note.isProtected) {
+            throw new eu.EtapiError(400, "NOTE_IS_PROTECTED", `Note '${req.params.noteId}' is protected and cannot be modified through ETAPI.`);
+        }
+
         note.setContent(req.body);
 
         noteService.asyncPostProcessContent(note, req.body);
@@ -133,7 +144,7 @@ function register(router) {
         const format = req.query.format || "html";
 
         if (!["html", "markdown"].includes(format)) {
-            throw new eu.EtapiError(400, "UNRECOGNIZED_EXPORT_FORMAT", `Unrecognized export format '${format}', supported values are 'html' (default) or 'markdown'`);
+            throw new eu.EtapiError(400, "UNRECOGNIZED_EXPORT_FORMAT", `Unrecognized export format '${format}', supported values are 'html' (default) or 'markdown'.`);
         }
 
         const taskContext = new TaskContext('no-progress-reporting');
@@ -152,17 +163,26 @@ function register(router) {
         zipImportService.importZip(taskContext, req.body, note).then(importedNote => {
             res.status(201).json({
                 note: mappers.mapNoteToPojo(importedNote),
-                branch: mappers.mapBranchToPojo(importedNote.getBranches()[0]),
+                branch: mappers.mapBranchToPojo(importedNote.getParentBranches()[0]),
             });
         }); // we need better error handling here, async errors won't be properly processed.
     });
 
-    eu.route(router, 'post' ,'/etapi/notes/:noteId/note-revision', (req, res, next) => {
+    eu.route(router, 'post' ,'/etapi/notes/:noteId/revision', (req, res, next) => {
         const note = eu.getAndCheckNote(req.params.noteId);
 
-        note.saveNoteRevision();
+        note.saveRevision();
 
         return res.sendStatus(204);
+    });
+
+    eu.route(router, 'get', '/etapi/notes/:noteId/attachments', (req, res, next) => {
+        const note = eu.getAndCheckNote(req.params.noteId);
+        const attachments = note.getAttachments({includeContentLength: true})
+
+        res.json(
+            attachments.map(attachment => mappers.mapAttachmentToPojo(attachment))
+        );
     });
 }
 
@@ -197,7 +217,7 @@ function parseBoolean(obj, name) {
     }
 
     if (!['true', 'false'].includes(obj[name])) {
-        throw new eu.EtapiError(400, SEARCH_PARAM_ERROR, `Cannot parse boolean '${name}' value '${obj[name]}, allowed values are 'true' and 'false'`);
+        throw new eu.EtapiError(400, SEARCH_PARAM_ERROR, `Cannot parse boolean '${name}' value '${obj[name]}, allowed values are 'true' and 'false'.`);
     }
 
     return obj[name] === 'true';
@@ -211,7 +231,7 @@ function parseOrderDirection(obj, name) {
     const integer = parseInt(obj[name]);
 
     if (!['asc', 'desc'].includes(obj[name])) {
-        throw new eu.EtapiError(400, SEARCH_PARAM_ERROR, `Cannot parse order direction value '${obj[name]}, allowed values are 'asc' and 'desc'`);
+        throw new eu.EtapiError(400, SEARCH_PARAM_ERROR, `Cannot parse order direction value '${obj[name]}, allowed values are 'asc' and 'desc'.`);
     }
 
     return integer;
@@ -225,7 +245,7 @@ function parseInteger(obj, name) {
     const integer = parseInt(obj[name]);
 
     if (Number.isNaN(integer)) {
-        throw new eu.EtapiError(400, SEARCH_PARAM_ERROR, `Cannot parse integer '${name}' value '${obj[name]}`);
+        throw new eu.EtapiError(400, SEARCH_PARAM_ERROR, `Cannot parse integer '${name}' value '${obj[name]}'.`);
     }
 
     return integer;

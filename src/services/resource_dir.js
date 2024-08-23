@@ -1,10 +1,10 @@
-const log = require('./log');
+const log = require('./log.js');
 const path = require('path');
 const fs = require('fs');
 
 const RESOURCE_DIR = path.resolve(__dirname, "../..");
 
-// where "trilium" executable is
+// where the "trilium" executable is
 const ELECTRON_APP_ROOT_DIR = path.resolve(RESOURCE_DIR, "../..");
 const DB_INIT_DIR = path.resolve(RESOURCE_DIR, "db");
 

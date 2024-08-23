@@ -1,8 +1,7 @@
 "use strict";
 
-const sql = require('../../services/sql');
-const becca = require("../../becca/becca");
-const NotFoundError = require("../../errors/not_found_error");
+const sql = require('../../services/sql.js');
+const becca = require('../../becca/becca.js');
 
 function getSchema() {
     const tableNames = sql.getColumn(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`);
@@ -19,11 +18,7 @@ function getSchema() {
 }
 
 function execute(req) {
-    const note = becca.getNote(req.params.noteId);
-
-    if (!note) {
-        throw new NotFoundError(`Note '${req.params.noteId}' was not found.`);
-    }
+    const note = becca.getNoteOrThrow(req.params.noteId);
 
     const queries = note.getContent().split("\n---");
 

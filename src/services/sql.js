@@ -4,10 +4,10 @@
  * @module sql
  */
 
-const log = require('./log');
+const log = require('./log.js');
 const Database = require('better-sqlite3');
-const dataDir = require('./data_dir');
-const cls = require('./cls');
+const dataDir = require('./data_dir.js');
+const cls = require('./cls.js');
 const fs = require("fs-extra");
 
 const dbConnection = new Database(dataDir.DOCUMENT_PATH);
@@ -26,7 +26,7 @@ const LOG_ALL_QUERIES = false;
 });
 
 function insert(tableName, rec, replace = false) {
-    const keys = Object.keys(rec);
+    const keys = Object.keys(rec || {});
     if (keys.length === 0) {
         log.error(`Can't insert empty object into table ${tableName}`);
         return;
@@ -53,7 +53,7 @@ function replace(tableName, rec) {
 }
 
 function upsert(tableName, primaryKey, rec) {
-    const keys = Object.keys(rec);
+    const keys = Object.keys(rec || {});
     if (keys.length === 0) {
         log.error(`Can't upsert empty object into table ${tableName}`);
         return;
@@ -225,7 +225,7 @@ function wrap(query, func) {
 
     const milliseconds = Date.now() - startTimestamp;
 
-    if (milliseconds >= 20) {
+    if (milliseconds >= 20 && !cls.isSlowQueryLoggingDisabled()) {
         if (query.includes("WITH RECURSIVE")) {
             log.info(`Slow recursive query took ${milliseconds}ms.`);
         }
@@ -242,7 +242,7 @@ function transactional(func) {
         const ret = dbConnection.transaction(func).deferred();
 
         if (!dbConnection.inTransaction) { // i.e. transaction was really committed (and not just savepoint released)
-            require('./ws').sendTransactionEntityChangesToAllClients();
+            require('./ws.js').sendTransactionEntityChangesToAllClients();
         }
 
         return ret;
@@ -253,11 +253,11 @@ function transactional(func) {
         if (entityChangeIds.length > 0) {
             log.info("Transaction rollback dirtied the becca, forcing reload.");
 
-            require('../becca/becca_loader').load();
+            require('../becca/becca_loader.js').load();
         }
 
         // the maxEntityChangeId has been incremented during failed transaction, need to recalculate
-        require('./entity_changes').recalculateMaxEntityChangeId();
+        require('./entity_changes.js').recalculateMaxEntityChangeId();
 
         throw e;
     }
@@ -293,6 +293,19 @@ async function copyDatabase(targetFilePath) {
     } // unlink throws exception if the file did not exist
 
     await dbConnection.backup(targetFilePath);
+}
+
+function disableSlowQueryLogging(cb) {
+    const orig = cls.isSlowQueryLoggingDisabled();
+
+    try {
+        cls.disableSlowQueryLogging(true);
+
+        return cb();
+    }
+    finally {
+        cls.disableSlowQueryLogging(orig);
+    }
 }
 
 module.exports = {
@@ -367,5 +380,6 @@ module.exports = {
     transactional,
     upsert,
     fillParamList,
-    copyDatabase
+    copyDatabase,
+    disableSlowQueryLogging
 };

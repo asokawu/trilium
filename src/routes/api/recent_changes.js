@@ -1,35 +1,35 @@
 "use strict";
 
-const sql = require('../../services/sql');
-const protectedSessionService = require('../../services/protected_session');
-const noteService = require('../../services/notes');
-const becca = require("../../becca/becca");
+const sql = require('../../services/sql.js');
+const protectedSessionService = require('../../services/protected_session.js');
+const noteService = require('../../services/notes.js');
+const becca = require('../../becca/becca.js');
 
 function getRecentChanges(req) {
     const {ancestorNoteId} = req.params;
 
     let recentChanges = [];
 
-    const noteRevisionRows = sql.getRows(`
+    const revisionRows = sql.getRows(`
         SELECT 
             notes.noteId,
             notes.isDeleted AS current_isDeleted,
             notes.deleteId AS current_deleteId,
             notes.title AS current_title,
             notes.isProtected AS current_isProtected,
-            note_revisions.title,
-            note_revisions.utcDateCreated AS utcDate,
-            note_revisions.dateCreated AS date
+            revisions.title,
+            revisions.utcDateCreated AS utcDate,
+            revisions.dateCreated AS date
         FROM 
-            note_revisions
+            revisions
             JOIN notes USING(noteId)`);
 
-    for (const noteRevisionRow of noteRevisionRows) {
-        const note = becca.getNote(noteRevisionRow.noteId);
+    for (const revisionRow of revisionRows) {
+        const note = becca.getNote(revisionRow.noteId);
 
         // for deleted notes, the becca note is null, and it's not possible to (easily) determine if it belongs to a subtree
         if (ancestorNoteId === 'root' || note?.hasAncestor(ancestorNoteId)) {
-            recentChanges.push(noteRevisionRow);
+            recentChanges.push(revisionRow);
         }
     }
 

@@ -53,7 +53,7 @@ const processedEntityChangeIds = new Set();
 function logRows(entityChanges) {
     const filteredRows = entityChanges.filter(row =>
         !processedEntityChangeIds.has(row.id)
-        && (row.entityName !== 'options' || row.entityId !== 'openTabs'));
+        && (row.entityName !== 'options' || row.entityId !== 'openNoteContexts'));
 
     if (filteredRows.length > 0) {
         console.debug(utils.now(), "Frontend update data: ", filteredRows);
@@ -86,7 +86,7 @@ async function executeFrontendUpdate(entityChanges) {
         }
 
         try {
-            // it's my turn so start it up
+            // it's my turn, so start it up
             consumeQueuePromise = consumeFrontendUpdateData();
 
             await consumeQueuePromise;
@@ -121,6 +121,16 @@ async function handleMessage(event) {
     }
     else if (message.type === 'api-log-messages') {
         appContext.triggerEvent("apiLogMessages", {noteId: message.noteId, messages: message.messages});
+    }
+    else if (message.type === 'toast') {
+        toastService.showMessage(message.message);
+    }
+    else if (message.type === 'execute-script') {
+        const bundleService = (await import("../services/bundle.js")).default;
+        const froca = (await import("../services/froca.js")).default;
+        const originEntity = message.originEntityId ? await froca.getNote(message.originEntityId) : null;
+
+        bundleService.getAndExecuteBundle(message.currentNoteId, originEntity, message.script, message.params);
     }
 }
 
@@ -172,7 +182,7 @@ async function consumeFrontendUpdateData() {
             logError(`Encountered error ${e.message}: ${e.stack}, reloading frontend.`);
 
             if (!glob.isDev && !options.is('debugModeEnabled')) {
-                // if there's an error in updating the frontend then the easy option to recover is to reload the frontend completely
+                // if there's an error in updating the frontend, then the easy option to recover is to reload the frontend completely
 
                 utils.reloadFrontendApp();
             }

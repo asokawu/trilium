@@ -1,7 +1,7 @@
 "use strict";
 
-const beccaService = require('../../becca/becca_service');
-const becca = require('../../becca/becca');
+const beccaService = require('../../becca/becca_service.js');
+const becca = require('../../becca/becca.js');
 
 class SearchResult {
     constructor(notePathArray) {
@@ -21,6 +21,10 @@ class SearchResult {
         this.score = 0;
 
         const note = becca.notes[this.noteId];
+
+        if (note.noteId.toLowerCase() === fulltextQuery) {
+            this.score += 100;
+        }
 
         if (note.title.toLowerCase() === fulltextQuery) {
             this.score += 100; // high reward for exact match #3470

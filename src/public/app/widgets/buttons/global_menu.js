@@ -18,7 +18,7 @@ const TPL = `
     .global-menu-button {
         background-image: url("${window.glob.assetPath}/images/icon-black.svg");
         background-repeat: no-repeat;
-        background-position: 50% 80%;
+        background-position: 40% 50%;
         background-size: 45px;
         width: 100%;
         height: 100%;
@@ -131,7 +131,7 @@ const TPL = `
                 
                 <a data-trigger-command="zoomOut" title="Zoom Out" class="bx bx-minus"></a>
                 
-                <span class="zoom-state"></span>
+                <span data-trigger-command="zoomReset" title="Reset Zoom Level" class="zoom-state"></span>
                 
                 <a data-trigger-command="zoomIn" title="Zoom In" class="bx bx-plus"></a>
             </div>
@@ -231,6 +231,7 @@ export default class GlobalMenuWidget extends BasicWidget {
     doRender() {
         this.$widget = $(TPL);
 
+        this.$dropdown = this.$widget.find("[data-toggle='dropdown']");
         const $button = this.$widget.find(".global-menu-button");
         $button.tooltip({ trigger: "hover" });
         $button.on("click", () => $button.tooltip("hide"));
@@ -249,7 +250,7 @@ export default class GlobalMenuWidget extends BasicWidget {
                 return;
             }
 
-            this.$widget.find("[data-toggle='dropdown']").dropdown('toggle');
+            this.$dropdown.dropdown('toggle');
         });
 
         this.$widget.find(".global-menu-button-update-available").append(
@@ -310,5 +311,13 @@ export default class GlobalMenuWidget extends BasicWidget {
 
     downloadLatestVersionCommand() {
         window.open("https://github.com/zadam/trilium/releases/latest");
+    }
+
+    activeContextChangedEvent() {
+        this.$dropdown.dropdown('hide');
+    }
+
+    noteSwitchedEvent() {
+        this.$dropdown.dropdown('hide');
     }
 }

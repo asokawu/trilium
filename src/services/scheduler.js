@@ -1,12 +1,16 @@
-const scriptService = require('./script');
-const cls = require('./cls');
-const sqlInit = require('./sql_init');
-const config = require('./config');
-const log = require('./log');
-const attributeService = require("../services/attributes");
-const protectedSessionService = require("../services/protected_session");
-const hiddenSubtreeService = require("./hidden_subtree");
+const scriptService = require('./script.js');
+const cls = require('./cls.js');
+const sqlInit = require('./sql_init.js');
+const config = require('./config.js');
+const log = require('./log.js');
+const attributeService = require('../services/attributes.js');
+const protectedSessionService = require('../services/protected_session.js');
+const hiddenSubtreeService = require('./hidden_subtree.js');
 
+/**
+ * @param {BNote} note
+ * @return {int[]}
+ */
 function getRunAtHours(note) {
     try {
         return note.getLabelValues('runAtHour').map(hour => parseInt(hour));
@@ -46,6 +50,8 @@ sqlInit.dbReady.then(() => {
         setInterval(cls.wrap(() => runNotesWithLabel('hourly')), 3600 * 1000);
 
         setInterval(cls.wrap(() => runNotesWithLabel('daily')), 24 * 3600 * 1000);
+
+        setInterval(cls.wrap(() => hiddenSubtreeService.checkHiddenSubtree()), 7 * 3600 * 1000);
     }
 
     setInterval(() => protectedSessionService.checkProtectedSessionExpiration(), 30000);

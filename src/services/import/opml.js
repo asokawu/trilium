@@ -1,9 +1,9 @@
 "use strict";
 
-const noteService = require('../../services/notes');
+const noteService = require('../../services/notes.js');
 const parseString = require('xml2js').parseString;
-const protectedSessionService = require('../protected_session');
-const htmlSanitizer = require('../html_sanitizer');
+const protectedSessionService = require('../protected_session.js');
+const htmlSanitizer = require('../html_sanitizer.js');
 
 /**
  * @param {TaskContext} taskContext
@@ -76,7 +76,7 @@ async function importOpml(taskContext, fileBuffer, parentNote) {
     for (const outline of outlines) {
         const note = importOutline(outline, parentNote.noteId);
 
-        // first created note will be activated after import
+        // the first created note will be activated after import
         returnNote = returnNote || note;
     }
 

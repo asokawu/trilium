@@ -27,7 +27,7 @@ export default class BookmarkSwitchWidget extends SwitchWidget {
         }
     }
 
-    refreshWithNote(note) {
+    async refreshWithNote(note) {
         const isBookmarked = !!note.getParentBranches().find(b => b.parentNoteId === '_lbBookmarks');
 
         this.$switchOn.toggle(!isBookmarked);
@@ -35,7 +35,7 @@ export default class BookmarkSwitchWidget extends SwitchWidget {
     }
 
     entitiesReloadedEvent({loadResults}) {
-        if (loadResults.getBranches().find(b => b.noteId === this.noteId)) {
+        if (loadResults.getBranchRows().find(b => b.noteId === this.noteId)) {
             this.refresh();
         }
     }

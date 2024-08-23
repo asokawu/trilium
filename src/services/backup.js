@@ -1,13 +1,29 @@
 "use strict";
 
-const dateUtils = require('./date_utils');
-const optionService = require('./options');
+const dateUtils = require('./date_utils.js');
+const optionService = require('./options.js');
 const fs = require('fs-extra');
-const dataDir = require('./data_dir');
-const log = require('./log');
-const syncMutexService = require('./sync_mutex');
-const cls = require('./cls');
-const sql = require('./sql');
+const dataDir = require('./data_dir.js');
+const log = require('./log.js');
+const syncMutexService = require('./sync_mutex.js');
+const cls = require('./cls.js');
+const sql = require('./sql.js');
+const path = require('path');
+
+function getExistingBackups() {
+    if (!fs.existsSync(dataDir.BACKUP_DIR)) {
+        return [];
+    }
+
+    return fs.readdirSync(dataDir.BACKUP_DIR)
+        .filter(fileName => fileName.includes("backup"))
+        .map(fileName => {
+            const filePath = path.resolve(dataDir.BACKUP_DIR, fileName);
+            const stat = fs.statSync(filePath)
+
+            return {fileName, filePath, mtime: stat.mtime};
+        });
+}
 
 function regularBackup() {
     cls.init(() => {
@@ -58,6 +74,7 @@ if (!fs.existsSync(dataDir.BACKUP_DIR)) {
 }
 
 module.exports = {
+    getExistingBackups,
     backupNow,
     regularBackup
 };

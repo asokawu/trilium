@@ -1,16 +1,16 @@
 "use strict";
 
 const normalizeString = require("normalize-strings");
-const lex = require('./lex');
-const handleParens = require('./handle_parens');
-const parse = require('./parse');
-const SearchResult = require("../search_result");
-const SearchContext = require("../search_context");
-const becca = require('../../../becca/becca');
-const beccaService = require('../../../becca/becca_service');
-const utils = require('../../utils');
-const log = require('../../log');
-const hoistedNoteService = require("../../hoisted_note");
+const lex = require('./lex.js');
+const handleParens = require('./handle_parens.js');
+const parse = require('./parse.js');
+const SearchResult = require('../search_result.js');
+const SearchContext = require('../search_context.js');
+const becca = require('../../../becca/becca.js');
+const beccaService = require('../../../becca/becca_service.js');
+const utils = require('../../utils.js');
+const log = require('../../log.js');
+const hoistedNoteService = require('../../hoisted_note.js');
 
 function searchFromNote(note) {
     let searchResultNoteIds, highlightedTokens;
@@ -72,7 +72,7 @@ function searchFromRelation(note, relationName) {
         return [];
     }
 
-    const scriptService = require("../../script"); // to avoid circular dependency
+    const scriptService = require('../../script.js'); // to avoid circular dependency
     const result = scriptService.executeNote(scriptNote, {originEntity: note});
 
     if (!Array.isArray(result)) {
@@ -90,49 +90,109 @@ function searchFromRelation(note, relationName) {
 }
 
 function loadNeededInfoFromDatabase() {
-    const sql = require('../../sql');
+    const sql = require('../../sql.js');
 
-    for (const noteId in becca.notes) {
-        becca.notes[noteId].contentSize = 0;
-        becca.notes[noteId].noteSize = 0;
-        becca.notes[noteId].revisionCount = 0;
-    }
+    /**
+     * This complex structure is needed to calculate total occupied space by a note. Several object instances
+     * (note, revisions, attachments) can point to a single blobId, and thus the blob size should count towards the total
+     * only once.
+     *
+     * @var {Object.<string, Object.<string, int>>} - noteId => { blobId => blobSize }
+     */
+    const noteBlobs = {};
 
     const noteContentLengths = sql.getRows(`
         SELECT 
             noteId, 
+            blobId,
             LENGTH(content) AS length 
         FROM notes
-             JOIN note_contents USING(noteId) 
+             JOIN blobs USING(blobId) 
         WHERE notes.isDeleted = 0`);
 
-    for (const {noteId, length} of noteContentLengths) {
+    for (const {noteId, blobId, length} of noteContentLengths) {
         if (!(noteId in becca.notes)) {
-            log.error(`Note ${noteId} not found in becca.`);
+            log.error(`Note '${noteId}' not found in becca.`);
             continue;
         }
 
         becca.notes[noteId].contentSize = length;
-        becca.notes[noteId].noteSize = length;
+        becca.notes[noteId].revisionCount = 0;
+
+        noteBlobs[noteId] = { [blobId]: length };
     }
 
-    const noteRevisionContentLengths = sql.getRows(`
-        SELECT 
-            noteId, 
-            LENGTH(content) AS length 
-        FROM notes
-             JOIN note_revisions USING(noteId) 
-             JOIN note_revision_contents USING(noteRevisionId) 
-        WHERE notes.isDeleted = 0`);
+    const attachmentContentLengths = sql.getRows(`
+        SELECT
+            ownerId AS noteId,
+            attachments.blobId,
+            LENGTH(content) AS length
+        FROM attachments
+            JOIN notes ON attachments.ownerId = notes.noteId
+            JOIN blobs ON attachments.blobId = blobs.blobId
+        WHERE attachments.isDeleted = 0 
+            AND notes.isDeleted = 0`);
 
-    for (const {noteId, length} of noteRevisionContentLengths) {
+    for (const {noteId, blobId, length} of attachmentContentLengths) {
         if (!(noteId in becca.notes)) {
-            log.error(`Note ${noteId} not found in becca.`);
+            log.error(`Note '${noteId}' not found in becca.`);
             continue;
         }
 
-        becca.notes[noteId].noteSize += length;
-        becca.notes[noteId].revisionCount++;
+        if (!(noteId in noteBlobs)) {
+            log.error(`Did not find a '${noteId}' in the noteBlobs.`);
+            continue;
+        }
+
+        noteBlobs[noteId][blobId] = length;
+    }
+
+    for (const noteId in noteBlobs) {
+        becca.notes[noteId].contentAndAttachmentsSize = Object.values(noteBlobs[noteId]).reduce((acc, size) => acc + size, 0);
+    }
+
+    const revisionContentLengths = sql.getRows(`
+            SELECT 
+                noteId, 
+                revisions.blobId,
+                LENGTH(content) AS length,
+                1 AS isNoteRevision
+            FROM notes
+                JOIN revisions USING(noteId) 
+                JOIN blobs ON revisions.blobId = blobs.blobId
+            WHERE notes.isDeleted = 0
+        UNION ALL
+            SELECT
+                noteId,
+                revisions.blobId,
+                LENGTH(content) AS length,
+                0 AS isNoteRevision -- it's attachment not counting towards revision count
+            FROM notes
+                JOIN revisions USING(noteId)
+                JOIN attachments ON attachments.ownerId = revisions.revisionId
+                JOIN blobs ON attachments.blobId = blobs.blobId
+            WHERE notes.isDeleted = 0`);
+
+    for (const {noteId, blobId, length, isNoteRevision} of revisionContentLengths) {
+        if (!(noteId in becca.notes)) {
+            log.error(`Note '${noteId}' not found in becca.`);
+            continue;
+        }
+
+        if (!(noteId in noteBlobs)) {
+            log.error(`Did not find a '${noteId}' in the noteBlobs.`);
+            continue;
+        }
+
+        noteBlobs[noteId][blobId] = length;
+
+        if (isNoteRevision) {
+            becca.notes[noteId].revisionCount++;
+        }
+    }
+
+    for (const noteId in noteBlobs) {
+        becca.notes[noteId].contentAndAttachmentsAndRevisionsSize = Object.values(noteBlobs[noteId]).reduce((acc, size) => acc + size, 0);
     }
 }
 
@@ -155,7 +215,6 @@ function findResultsWithExpression(expression, searchContext) {
     const noteSet = expression.execute(allNoteSet, executionContext, searchContext);
 
     const searchResults = noteSet.notes
-        .filter(note => !note.isDeleted)
         .map(note => {
             const notePathArray = executionContext.noteIdToNotePath[note.noteId] || note.getBestNotePath();
 

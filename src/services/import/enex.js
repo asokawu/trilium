@@ -1,14 +1,14 @@
 const sax = require("sax");
 const stream = require('stream');
 const {Throttle} = require('stream-throttle');
-const log = require("../log");
-const utils = require("../utils");
-const sql = require("../sql");
-const noteService = require("../notes");
-const imageService = require("../image");
-const protectedSessionService = require('../protected_session');
-const htmlSanitizer = require("../html_sanitizer");
-const {sanitizeAttributeName} = require("../sanitize_attribute_name");
+const log = require('../log.js');
+const utils = require('../utils.js');
+const sql = require('../sql.js');
+const noteService = require('../notes.js');
+const imageService = require('../image.js');
+const protectedSessionService = require('../protected_session.js');
+const htmlSanitizer = require('../html_sanitizer.js');
+const {sanitizeAttributeName} = require('../sanitize_attribute_name.js');
 
 /**
  * date format is e.g. 20181121T193703Z or 2013-04-14T16:19:00.000Z (Mac evernote, see #3496)
@@ -105,8 +105,7 @@ function importEnex(taskContext, file, parentNote) {
     }
 
     saxStream.on("error", e => {
-        // unhandled errors will throw, since this is a proper node
-        // event emitter.
+        // unhandled errors will throw, since this is a proper node event emitter.
         log.error(`error when parsing ENEX file: ${e}`);
         // clear the error
         this._parser.error = null;
@@ -206,7 +205,7 @@ function importEnex(taskContext, file, parentNote) {
         }
     });
 
-    function updateDates(noteId, utcDateCreated, utcDateModified) {
+    function updateDates(note, utcDateCreated, utcDateModified) {
         // it's difficult to force custom dateCreated and dateModified to Note entity, so we do it post-creation with SQL
         sql.execute(`
                 UPDATE notes 
@@ -215,13 +214,13 @@ function importEnex(taskContext, file, parentNote) {
                     dateModified = ?,
                     utcDateModified = ?
                 WHERE noteId = ?`,
-            [utcDateCreated, utcDateCreated, utcDateModified, utcDateModified, noteId]);
+            [utcDateCreated, utcDateCreated, utcDateModified, utcDateModified, note.noteId]);
 
         sql.execute(`
-                UPDATE note_contents
+                UPDATE blobs
                 SET utcDateModified = ?
-                WHERE noteId = ?`,
-            [utcDateModified, noteId]);
+                WHERE blobId = ?`,
+            [utcDateModified, note.blobId]);
     }
 
     function saveNote() {
@@ -287,7 +286,7 @@ function importEnex(taskContext, file, parentNote) {
                     resourceNote.addAttribute(attr.type, attr.name, attr.value);
                 }
 
-                updateDates(resourceNote.noteId, utcDateCreated, utcDateModified);
+                updateDates(resourceNote, utcDateCreated, utcDateModified);
 
                 taskContext.increaseProgressCount();
 
@@ -302,27 +301,21 @@ function importEnex(taskContext, file, parentNote) {
                         ? resource.title
                         : `image.${resource.mime.substr(6)}`; // default if real name is not present
 
-                    const {url, note: imageNote} = imageService.saveImage(noteEntity.noteId, resource.content, originalName, taskContext.data.shrinkImages);
+                    const attachment = imageService.saveImageToAttachment(noteEntity.noteId, resource.content, originalName, taskContext.data.shrinkImages);
 
-                    for (const attr of resource.attributes) {
-                        if (attr.name !== 'originalFileName') { // this one is already saved in imageService
-                            imageNote.addAttribute(attr.type, attr.name, attr.value);
-                        }
-                    }
-
-                    updateDates(imageNote.noteId, utcDateCreated, utcDateModified);
-
+                    const encodedTitle = encodeURIComponent(attachment.title);
+                    const url = `api/attachments/${attachment.attachmentId}/image/${encodedTitle}`;
                     const imageLink = `<img src="${url}">`;
 
                     content = content.replace(mediaRegex, imageLink);
 
                     if (!content.includes(imageLink)) {
-                        // if there wasn't any match for the reference, we'll add the image anyway
-                        // otherwise image would be removed since no note would include it
+                        // if there wasn't any match for the reference, we'll add the image anyway,
+                        // otherwise the image would be removed since no note would include it
                         content += imageLink;
                     }
                 } catch (e) {
-                    log.error(`error when saving image from ENEX file: ${e}`);
+                    log.error(`error when saving image from ENEX file: ${e.message}`);
                     createFileNote();
                 }
             } else {
@@ -337,7 +330,7 @@ function importEnex(taskContext, file, parentNote) {
 
         noteService.asyncPostProcessContent(noteEntity, content);
 
-        updateDates(noteEntity.noteId, utcDateCreated, utcDateModified);
+        updateDates(noteEntity, utcDateCreated, utcDateModified);
     }
 
     saxStream.on("closetag", tag => {

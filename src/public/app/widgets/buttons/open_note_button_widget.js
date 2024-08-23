@@ -13,10 +13,13 @@ export default class OpenNoteButtonWidget extends OnClickButtonWidget {
             .icon(() => this.noteToOpen.getIcon())
             .onClick((widget, evt) => this.launch(evt))
             .onAuxClick((widget, evt) => this.launch(evt))
-            .onContextMenu(evt => linkContextMenuService.openContextMenu(this.noteToOpen.noteId, null, evt));
+            .onContextMenu(evt => linkContextMenuService.openContextMenu(this.noteToOpen.noteId, evt));
     }
 
     async launch(evt) {
+        if (evt.which === 3) {
+            return;
+        }
         const ctrlKey = utils.isCtrlKey(evt);
 
         if ((evt.which === 1 && ctrlKey) || evt.which === 2) {

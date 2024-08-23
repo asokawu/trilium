@@ -1,9 +1,10 @@
-const log = require("./log");
-const noteRevisionService = require("./note_revisions");
-const becca = require("../becca/becca");
-const cloningService = require("./cloning");
-const branchService = require("./branches");
-const utils = require("./utils");
+const log = require('./log.js');
+const revisionService = require('./revisions.js');
+const becca = require('../becca/becca.js');
+const cloningService = require('./cloning.js');
+const branchService = require('./branches.js');
+const utils = require('./utils.js');
+const eraseService = require("./erase.js");
 
 const ACTION_HANDLERS = {
     addLabel: (action, note) => {
@@ -17,8 +18,8 @@ const ACTION_HANDLERS = {
 
         note.deleteNote(deleteId);
     },
-    deleteNoteRevisions: (action, note) => {
-        noteRevisionService.eraseNoteRevisions(note.getNoteRevisions().map(rev => rev.noteRevisionId));
+    deleteRevisions: (action, note) => {
+        eraseService.eraseRevisions(note.getRevisions().map(rev => rev.revisionId));
     },
     deleteLabel: (action, note) => {
         for (const label of note.getOwnedLabels(action.labelName)) {
@@ -134,7 +135,7 @@ function executeActions(note, searchResultNoteIds) {
     for (const resultNoteId of searchResultNoteIds) {
         const resultNote = becca.getNote(resultNoteId);
 
-        if (!resultNote || resultNote.isDeleted) {
+        if (!resultNote) {
             continue;
         }
 

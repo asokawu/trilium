@@ -29,10 +29,10 @@ class MobileDetailMenuWidget extends BasicWidget {
                     }
                     else if (command === "delete") {
                         const notePath = appContext.tabManager.getActiveContextNotePath();
-                        const branchId = await treeService.getBranchIdFromNotePath(notePath);
+                        const branchId = await treeService.getBranchIdFromUrl(notePath);
 
                         if (!branchId) {
-                            throw new Error(`Cannot get branchId for notePath ${notePath}`);
+                            throw new Error(`Cannot get branchId for notePath '${notePath}'`);
                         }
 
                         if (await branchService.deleteNotes([branchId])) {

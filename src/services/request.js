@@ -1,12 +1,12 @@
 "use strict";
 
-const utils = require('./utils');
-const log = require('./log');
+const utils = require('./utils.js');
+const log = require('./log.js');
 const url = require('url');
-const syncOptions = require('./sync_options');
+const syncOptions = require('./sync_options.js');
 
 // this service provides abstraction over node's HTTP/HTTPS and electron net.client APIs
-// this allows to support system proxy
+// this allows supporting system proxy
 
 function exec(opts) {
     const client = getClient(opts);
@@ -58,28 +58,42 @@ function exec(opts) {
             request.on('error', err => reject(generateError(opts, err)));
 
             request.on('response', response => {
-                if (![200, 201, 204].includes(response.statusCode)) {
-                    reject(generateError(opts, `${response.statusCode} ${response.statusMessage}`));
-                }
-
                 if (opts.cookieJar && response.headers['set-cookie']) {
                     opts.cookieJar.header = response.headers['set-cookie'];
                 }
 
                 let responseStr = '';
+                let chunks = [];
 
-                response.on('data', chunk => responseStr += chunk);
+                response.on('data', chunk => chunks.push(chunk));
 
                 response.on('end', () => {
-                    try {
-                        const jsonObj = responseStr.trim() ? JSON.parse(responseStr) : null;
+                    // use Buffer instead of string concatenation to avoid implicit decoding for each chunk
+                    // decode the entire data chunks explicitly as utf-8
+                    responseStr = Buffer.concat(chunks).toString('utf-8')
 
-                        resolve(jsonObj);
-                    }
-                    catch (e) {
-                        log.error(`Failed to deserialize sync response: ${responseStr}`);
+                    if ([200, 201, 204].includes(response.statusCode)) {
+                        try {
+                            const jsonObj = responseStr.trim() ? JSON.parse(responseStr) : null;
 
-                        reject(generateError(opts, e.message));
+                            resolve(jsonObj);
+                        } catch (e) {
+                            log.error(`Failed to deserialize sync response: ${responseStr}`);
+
+                            reject(generateError(opts, e.message));
+                        }
+                    } else {
+                        let errorMessage;
+
+                        try {
+                            const jsonObj = JSON.parse(responseStr);
+
+                            errorMessage = jsonObj?.message || '';
+                        } catch (e) {
+                            errorMessage = responseStr.substr(0, Math.min(responseStr.length, 100));
+                        }
+
+                        reject(generateError(opts, `${response.statusCode} ${response.statusMessage} ${errorMessage}`));
                     }
                 });
             });
@@ -123,7 +137,7 @@ function getImage(imageUrl) {
                 host: parsedTargetUrl.hostname,
                 port: parsedTargetUrl.port,
                 path: parsedTargetUrl.path,
-                timeout: opts.timeout, // works only for node client
+                timeout: opts.timeout, // works only for the node client
                 headers: {},
                 agent: proxyAgent
             });
@@ -151,6 +165,8 @@ function getImage(imageUrl) {
     });
 }
 
+const HTTP = 'http:', HTTPS = 'https:';
+
 function getProxyAgent(opts) {
     if (!opts.proxy) {
         return null;
@@ -158,20 +174,20 @@ function getProxyAgent(opts) {
 
     const {protocol} = url.parse(opts.url);
 
-    if (protocol === 'http:' || protocol === 'https:') {
-        const protoNoColon = protocol.substr(0, protocol.length - 1);
-        const AgentClass = require(`${protoNoColon}-proxy-agent`);
-
-        return new AgentClass(opts.proxy);
-    }
-    else {
+    if (![HTTP, HTTPS].includes(protocol)) {
         return null;
     }
+
+    const AgentClass = HTTP === protocol
+        ? require("http-proxy-agent").HttpProxyAgent
+        : require("https-proxy-agent").HttpsProxyAgent;
+
+    return new AgentClass(opts.proxy);
 }
 
 function getClient(opts) {
-    // it's not clear how to explicitly configure proxy (as opposed to system proxy)
-    // so in that case we always use node's modules
+    // it's not clear how to explicitly configure proxy (as opposed to system proxy),
+    // so in that case, we always use node's modules
     if (utils.isElectron() && !opts.proxy) {
         return require('electron').net;
     }
@@ -182,7 +198,7 @@ function getClient(opts) {
             return require(protocol.substr(0, protocol.length - 1));
         }
         else {
-            throw new Error(`Unrecognized protocol "${protocol}"`);
+            throw new Error(`Unrecognized protocol '${protocol}'`);
         }
     }
 }

@@ -1,12 +1,12 @@
-const syncService = require('./sync');
-const log = require('./log');
-const sqlInit = require('./sql_init');
-const optionService = require('./options');
-const syncOptions = require('./sync_options');
-const request = require('./request');
-const appInfo = require('./app_info');
-const utils = require('./utils');
-const becca = require("../becca/becca");
+const syncService = require('./sync.js');
+const log = require('./log.js');
+const sqlInit = require('./sql_init.js');
+const optionService = require('./options.js');
+const syncOptions = require('./sync_options.js');
+const request = require('./request.js');
+const appInfo = require('./app_info.js');
+const utils = require('./utils.js');
+const becca = require('../becca/becca.js');
 
 async function hasSyncServerSchemaAndSeed() {
     const response = await requestToSyncServer('GET', '/api/setup/status');
@@ -37,7 +37,7 @@ async function sendSeedToSyncServer() {
         syncVersion: appInfo.syncVersion
     });
 
-    // this is completely new sync, need to reset counters. If this would not be new sync,
+    // this is a completely new sync, need to reset counters. If this was not a new sync,
     // the previous request would have failed.
     optionService.setOption('lastSyncedPush', 0);
     optionService.setOption('lastSyncedPull', 0);
@@ -66,7 +66,7 @@ async function setupSyncFromSyncServer(syncServerHost, syncProxy, password) {
     try {
         log.info("Getting document options FROM sync server.");
 
-        // response is expected to contain documentId and documentSecret options
+        // the response is expected to contain documentId and documentSecret options
         const resp = await request.exec({
             method: 'get',
             url: `${syncServerHost}/api/setup/sync-seed`,
@@ -93,7 +93,7 @@ async function setupSyncFromSyncServer(syncServerHost, syncProxy, password) {
         return { result: 'success' };
     }
     catch (e) {
-        log.error(`Sync failed: ${e.message}`);
+        log.error(`Sync failed: '${e.message}', stack: ${e.stack}`);
 
         return {
             result: 'failure',

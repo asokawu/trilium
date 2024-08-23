@@ -1,28 +1,30 @@
-const sql = require('./sql');
-const sqlInit = require('./sql_init');
-const optionService = require('./options');
-const dateUtils = require('./date_utils');
-const entityChangesService = require('./entity_changes');
-const eventService = require('./events');
-const cls = require('../services/cls');
-const protectedSessionService = require('../services/protected_session');
-const log = require('../services/log');
-const utils = require('../services/utils');
-const noteRevisionService = require('../services/note_revisions');
-const attributeService = require('../services/attributes');
-const request = require('./request');
+const sql = require('./sql.js');
+const optionService = require('./options.js');
+const dateUtils = require('./date_utils.js');
+const entityChangesService = require('./entity_changes.js');
+const eventService = require('./events.js');
+const cls = require('../services/cls.js');
+const protectedSessionService = require('../services/protected_session.js');
+const log = require('../services/log.js');
+const utils = require('../services/utils.js');
+const revisionService = require('./revisions.js');
+const request = require('./request.js');
 const path = require('path');
 const url = require('url');
-const becca = require('../becca/becca');
-const BBranch = require('../becca/entities/bbranch');
-const BNote = require('../becca/entities/bnote');
-const BAttribute = require('../becca/entities/battribute');
+const becca = require('../becca/becca.js');
+const BBranch = require('../becca/entities/bbranch.js');
+const BNote = require('../becca/entities/bnote.js');
+const BAttribute = require('../becca/entities/battribute.js');
+const BAttachment = require('../becca/entities/battachment.js');
 const dayjs = require("dayjs");
-const htmlSanitizer = require("./html_sanitizer");
-const ValidationError = require("../errors/validation_error");
-const noteTypesService = require("./note_types");
+const htmlSanitizer = require('./html_sanitizer.js');
+const ValidationError = require('../errors/validation_error.js');
+const noteTypesService = require('./note_types.js');
 const fs = require("fs");
+const ws = require('./ws.js');
+const html2plaintext = require('html2plaintext')
 
+/** @param {BNote} parentNote */
 function getNewNotePosition(parentNote) {
     if (parentNote.isLabelTruthy('newNotesOnTop')) {
         const minNotePos = parentNote.getChildBranches()
@@ -39,6 +41,7 @@ function getNewNotePosition(parentNote) {
     }
 }
 
+/** @param {BNote} note */
 function triggerNoteTitleChanged(note) {
     eventService.emit(eventService.NOTE_TITLE_CHANGED, note);
 }
@@ -55,6 +58,10 @@ function deriveMime(type, mime) {
     return noteTypesService.getDefaultMimeForNoteType(type);
 }
 
+/**
+ * @param {BNote} parentNote
+ * @param {BNote} childNote
+ */
 function copyChildAttributes(parentNote, childNote) {
     for (const attr of parentNote.getAttributes()) {
         if (attr.name.startsWith("child:")) {
@@ -63,7 +70,7 @@ function copyChildAttributes(parentNote, childNote) {
 
             if (hasAlreadyTemplate && attr.type === 'relation' && name === 'template') {
                 // if the note already has a template, it means the template was chosen by the user explicitly
-                // in the menu. In that case we should override the default templates defined in the child: attrs
+                // in the menu. In that case, we should override the default templates defined in the child: attrs
                 continue;
             }
 
@@ -79,6 +86,7 @@ function copyChildAttributes(parentNote, childNote) {
     }
 }
 
+/** @param {BNote} parentNote */
 function getNewNoteTitle(parentNote) {
     let title = "new note";
 
@@ -98,8 +106,8 @@ function getNewNoteTitle(parentNote) {
         }
     }
 
-    // this isn't in theory a good place to sanitize title, but this will catch a lot of XSS attempts
-    // title is supposed to contain text only (not HTML) and be printed text only, but given the number of usages
+    // this isn't in theory a good place to sanitize title, but this will catch a lot of XSS attempts.
+    // title is supposed to contain text only (not HTML) and be printed text only, but given the number of usages,
     // it's difficult to guarantee correct handling in all cases
     title = htmlSanitizer.sanitize(title);
 
@@ -110,7 +118,7 @@ function getAndValidateParent(params) {
     const parentNote = becca.notes[params.parentNoteId];
 
     if (!parentNote) {
-        throw new ValidationError(`Parent note "${params.parentNoteId}" not found.`);
+        throw new ValidationError(`Parent note '${params.parentNoteId}' was not found.`);
     }
 
     if (parentNote.type === 'launcher' && parentNote.noteId !== '_lbBookmarks') {
@@ -140,12 +148,12 @@ function getAndValidateParent(params) {
  * - {*} content
  * - {string} type - text, code, file, image, search, book, relationMap, canvas, render
  *
- * Following are optional (have defaults)
+ * The following are optional (have defaults)
  * - {string} mime - value is derived from default mimes for type
  * - {boolean} isProtected - default is false
  * - {boolean} isExpanded - default is false
  * - {string} prefix - default is empty string
- * - {integer} notePosition - default is last existing notePosition in a parent + 10
+ * - {int} notePosition - default is the last existing notePosition in a parent + 10
  *
  * @param params
  * @returns {{note: BNote, branch: BBranch}}
@@ -159,6 +167,15 @@ function createNewNote(params) {
 
     if (params.content === null || params.content === undefined) {
         throw new Error(`Note content must be set`);
+    }
+
+    let error;
+    if (error = dateUtils.validateLocalDateTime(params.dateCreated)) {
+        throw new Error(error);
+    }
+
+    if (error = dateUtils.validateUtcDateTime(params.utcDateCreated)) {
+        throw new Error(error);
     }
 
     return sql.transactional(() => {
@@ -181,7 +198,9 @@ function createNewNote(params) {
                 title: params.title,
                 isProtected: !!params.isProtected,
                 type: params.type,
-                mime: deriveMime(params.type, params.mime)
+                mime: deriveMime(params.type, params.mime),
+                dateCreated: params.dateCreated,
+                utcDateCreated: params.utcDateCreated
             }).save();
 
             note.setContent(params.content);
@@ -219,8 +238,8 @@ function createNewNote(params) {
         eventService.emit(eventService.ENTITY_CREATED, { entityName: 'notes', entity: note });
         eventService.emit(eventService.ENTITY_CHANGED, { entityName: 'notes', entity: note });
         triggerNoteTitleChanged(note);
-        // note_contents doesn't use "created" event
-        eventService.emit(eventService.ENTITY_CHANGED, { entityName: 'note_contents', entity: note });
+        // blobs entity doesn't use "created" event
+        eventService.emit(eventService.ENTITY_CHANGED, { entityName: 'blobs', entity: note });
         eventService.emit(eventService.ENTITY_CREATED, { entityName: 'branches', entity: branch });
         eventService.emit(eventService.ENTITY_CHANGED, { entityName: 'branches', entity: branch });
         eventService.emit(eventService.CHILD_NOTE_CREATED, { childNote: note, parentNote: parentNote });
@@ -238,7 +257,7 @@ function createNewNoteWithTarget(target, targetBranchId, params) {
     if (!params.type) {
         const parentNote = becca.notes[params.parentNoteId];
 
-        // code note type can be inherited, otherwise text is default
+        // code note type can be inherited, otherwise "text" is the default
         params.type = parentNote.type === 'code' ? 'code' : 'text';
         params.mime = parentNote.type === 'code' ? parentNote.mime : 'text/html';
     }
@@ -257,15 +276,21 @@ function createNewNoteWithTarget(target, targetBranchId, params) {
 
         const retObject = createNewNote(params);
 
-        entityChangesService.addNoteReorderingEntityChange(params.parentNoteId);
+        entityChangesService.putNoteReorderingEntityChange(params.parentNoteId);
 
         return retObject;
     }
     else {
-        throw new Error(`Unknown target ${target}`);
+        throw new Error(`Unknown target '${target}'`);
     }
 }
 
+/**
+ * @param {BNote} note
+ * @param {boolean} protect
+ * @param {boolean} includingSubTree
+ * @param {TaskContext} taskContext
+ */
 function protectNoteRecursively(note, protect, includingSubTree, taskContext) {
     protectNote(note, protect);
 
@@ -278,30 +303,113 @@ function protectNoteRecursively(note, protect, includingSubTree, taskContext) {
     }
 }
 
+/**
+ * @param {BNote} note
+ * @param {boolean} protect
+ */
 function protectNote(note, protect) {
+    if (!protectedSessionService.isProtectedSessionAvailable()) {
+        throw new Error(`Cannot (un)protect note '${note.noteId}' with protect flag '${protect}' without active protected session`);
+    }
+
     try {
         if (protect !== note.isProtected) {
             const content = note.getContent();
 
             note.isProtected = protect;
-
-            // see https://github.com/zadam/trilium/issues/3523
-            // IIRC a zero-sized buffer can be returned as null from the database
-            if (content !== null) {
-                // this will force de/encryption
-                note.setContent(content);
-            }
-
-            note.save();
+            note.setContent(content, { forceSave: true });
         }
 
-        noteRevisionService.protectNoteRevisions(note);
+        revisionService.protectRevisions(note);
+
+        for (const attachment of note.getAttachments()) {
+            if (protect !== attachment.isProtected) {
+                try {
+                    const content = attachment.getContent();
+
+                    attachment.isProtected = protect;
+                    attachment.setContent(content, {forceSave: true});
+                }
+                catch (e) {
+                    log.error(`Could not un/protect attachment '${attachment.attachmentId}'`);
+
+                    throw e;
+                }
+            }
+        }
     }
     catch (e) {
-        log.error(`Could not un/protect note ID = ${note.noteId}`);
+        log.error(`Could not un/protect note '${note.noteId}'`);
 
         throw e;
     }
+}
+
+function checkImageAttachments(note, content) {
+    const foundAttachmentIds = new Set();
+    let match;
+
+    const imgRegExp = /src="[^"]*api\/attachments\/([a-zA-Z0-9_]+)\/image/g;
+    while (match = imgRegExp.exec(content)) {
+        foundAttachmentIds.add(match[1]);
+    }
+
+    const linkRegExp = /href="[^"]+attachmentId=([a-zA-Z0-9_]+)/g;
+    while (match = linkRegExp.exec(content)) {
+        foundAttachmentIds.add(match[1]);
+    }
+
+    const attachments = note.getAttachments();
+
+    for (const attachment of attachments) {
+        const attachmentInContent = foundAttachmentIds.has(attachment.attachmentId);
+
+        if (attachment.utcDateScheduledForErasureSince && attachmentInContent) {
+            attachment.utcDateScheduledForErasureSince = null;
+            attachment.save();
+        } else if (!attachment.utcDateScheduledForErasureSince && !attachmentInContent) {
+            attachment.utcDateScheduledForErasureSince = dateUtils.utcNowDateTime();
+            attachment.save();
+        }
+    }
+
+    const existingAttachmentIds = new Set(attachments.map(att => att.attachmentId));
+    const unknownAttachmentIds = Array.from(foundAttachmentIds).filter(foundAttId => !existingAttachmentIds.has(foundAttId));
+    const unknownAttachments = becca.getAttachments(unknownAttachmentIds);
+
+    for (const unknownAttachment of unknownAttachments) {
+        // the attachment belongs to a different note (was copy-pasted). Attachments can be linked only from the note
+        // which owns it, so either find an existing attachment having the same content or make a copy.
+        let localAttachment = note.getAttachments().find(att => att.role === unknownAttachment.role && att.blobId === unknownAttachment.blobId);
+
+        if (localAttachment) {
+            if (localAttachment.utcDateScheduledForErasureSince) {
+                // the attachment is for sure linked now, so reset the scheduled deletion
+                localAttachment.utcDateScheduledForErasureSince = null;
+                localAttachment.save();
+            }
+
+            log.info(`Found equivalent attachment '${localAttachment.attachmentId}' of note '${note.noteId}' for the linked foreign attachment '${unknownAttachment.attachmentId}' of note '${unknownAttachment.ownerId}'`);
+        } else {
+            localAttachment = unknownAttachment.copy();
+            localAttachment.ownerId = note.noteId;
+            localAttachment.setContent(unknownAttachment.getContent(), {forceSave: true});
+
+            ws.sendMessageToAllClients({ type: 'toast', message: `Attachment '${localAttachment.title}' has been copied to note '${note.title}'.`});
+            log.info(`Copied attachment '${unknownAttachment.attachmentId}' of note '${unknownAttachment.ownerId}' to new '${localAttachment.attachmentId}' of note '${note.noteId}'`);
+        }
+
+        // replace image links
+        content = content.replace(`api/attachments/${unknownAttachment.attachmentId}/image`, `api/attachments/${localAttachment.attachmentId}/image`);
+        // replace reference links
+        content = content.replace(new RegExp(`href="[^"]+attachmentId=${unknownAttachment.attachmentId}[^"]*"`, "g"),
+            `href="#root/${localAttachment.ownerId}?viewMode=attachments&amp;attachmentId=${localAttachment.attachmentId}"`);
+    }
+
+    return {
+        forceFrontendReload: unknownAttachments.length > 0,
+        content
+    };
 }
 
 function findImageLinks(content, foundLinks) {
@@ -315,7 +423,7 @@ function findImageLinks(content, foundLinks) {
         });
     }
 
-    // removing absolute references to server to keep it working between instances
+    // removing absolute references to server to keep it working between instances,
     // we also omit / at the beginning to keep the paths relative
     return content.replace(/src="[^"]*\/api\/images\//g, 'src="api/images/');
 }
@@ -350,19 +458,26 @@ function findIncludeNoteLinks(content, foundLinks) {
 }
 
 function findRelationMapLinks(content, foundLinks) {
-    const obj = JSON.parse(content);
+    try {
+        const obj = JSON.parse(content);
 
-    for (const note of obj.notes) {
-        foundLinks.push({
-            name: 'relationMapLink',
-            value: note.noteId
-        });
+        for (const note of obj.notes) {
+            foundLinks.push({
+                name: 'relationMapLink',
+                value: note.noteId
+            });
+        }
+    }
+    catch (e) {
+        log.error("Could not scan for relation map links: " + e.message);
     }
 }
 
-const imageUrlToNoteIdMapping = {};
+const imageUrlToAttachmentIdMapping = {};
 
 async function downloadImage(noteId, imageUrl) {
+    const unescapedUrl = utils.unescapeHtml(imageUrl);
+
     try {
         let imageBuffer;
 
@@ -379,20 +494,18 @@ async function downloadImage(noteId, imageUrl) {
                 });
             });
         } else {
-            imageBuffer = await request.getImage(imageUrl);
+            imageBuffer = await request.getImage(unescapedUrl);
         }
 
-        const parsedUrl = url.parse(imageUrl);
+        const parsedUrl = url.parse(unescapedUrl);
         const title = path.basename(parsedUrl.pathname);
 
-        const imageService = require('../services/image');
-        const {note} = imageService.saveImage(noteId, imageBuffer, title, true, true);
+        const imageService = require('../services/image.js');
+        const attachment = imageService.saveImageToAttachment(noteId, imageBuffer, title, true, true);
 
-        note.addLabel('imageUrl', imageUrl);
+        imageUrlToAttachmentIdMapping[imageUrl] = attachment.attachmentId;
 
-        imageUrlToNoteIdMapping[imageUrl] = note.noteId;
-
-        log.info(`Download of '${imageUrl}' succeeded and was saved as image note '${note.noteId}'`);
+        log.info(`Download of '${imageUrl}' succeeded and was saved as image attachment '${attachment.attachmentId}' of note '${noteId}'`);
     }
     catch (e) {
         log.error(`Download of '${imageUrl}' for note '${noteId}' failed with error: ${e.message} ${e.stack}`);
@@ -402,17 +515,13 @@ async function downloadImage(noteId, imageUrl) {
 /** url => download promise */
 const downloadImagePromises = {};
 
-function replaceUrl(content, url, imageNote) {
+function replaceUrl(content, url, attachment) {
     const quotedUrl = utils.quoteRegex(url);
 
-    return content.replace(new RegExp(`\\s+src=[\"']${quotedUrl}[\"']`, "ig"), ` src="api/images/${imageNote.noteId}/${imageNote.title}"`);
+    return content.replace(new RegExp(`\\s+src=[\"']${quotedUrl}[\"']`, "ig"), ` src="api/attachments/${attachment.attachmentId}/image/${encodeURIComponent(attachment.title)}"`);
 }
 
 function downloadImages(noteId, content) {
-    if (!optionService.getOptionBool("downloadImagesAutomatically")) {
-        return content;
-    }
-
     const imageRe = /<img[^>]*?\ssrc=['"]([^'">]+)['"]/ig;
     let imageMatch;
 
@@ -424,37 +533,31 @@ function downloadImages(noteId, content) {
             const imageBase64 = url.substr(inlineImageMatch[0].length);
             const imageBuffer = Buffer.from(imageBase64, 'base64');
 
-            const imageService = require('../services/image');
-            const {note} = imageService.saveImage(noteId, imageBuffer, "inline image", true, true);
+            const imageService = require('../services/image.js');
+            const attachment = imageService.saveImageToAttachment(noteId, imageBuffer, "inline image", true, true);
 
-            const sanitizedTitle = note.title.replace(/[^a-z0-9-.]/gi, "");
+            const encodedTitle = encodeURIComponent(attachment.title);
 
-            content = `${content.substr(0, imageMatch.index)}<img src="api/images/${note.noteId}/${sanitizedTitle}"${content.substr(imageMatch.index + imageMatch[0].length)}`;
+            content = `${content.substr(0, imageMatch.index)}<img src="api/attachments/${attachment.attachmentId}/image/${encodedTitle}"${content.substr(imageMatch.index + imageMatch[0].length)}`;
         }
-        else if (!url.includes('api/images/')
+        else if (!url.includes('api/images/') && !/api\/attachments\/.+\/image\/?.*/.test(url)
             // this is an exception for the web clipper's "imageId"
             && (url.length !== 20 || url.toLowerCase().startsWith('http'))) {
 
-            if (url in imageUrlToNoteIdMapping) {
-                const imageNote = becca.getNote(imageUrlToNoteIdMapping[url]);
-
-                if (!imageNote || imageNote.isDeleted) {
-                    delete imageUrlToNoteIdMapping[url];
-                }
-                else {
-                    content = replaceUrl(content, url, imageNote);
-                    continue;
-                }
+            if (!optionService.getOptionBool("downloadImagesAutomatically")) {
+                continue;
             }
 
-            const existingImage = (attributeService.getNotesWithLabel('imageUrl', url))
-                .find(note => note.type === 'image');
+            if (url in imageUrlToAttachmentIdMapping) {
+                const attachment = becca.getAttachment(imageUrlToAttachmentIdMapping[url]);
 
-            if (existingImage) {
-                imageUrlToNoteIdMapping[url] = existingImage.noteId;
-
-                content = replaceUrl(content, url, existingImage);
-                continue;
+                if (!attachment) {
+                    delete imageUrlToAttachmentIdMapping[url];
+                }
+                else {
+                    content = replaceUrl(content, url, attachment);
+                    continue;
+                }
             }
 
             if (url in downloadImagePromises) {
@@ -472,14 +575,14 @@ function downloadImages(noteId, content) {
         setTimeout(() => {
             // the normal expected flow of the offline image saving is that users will paste the image(s)
             // which will get asynchronously downloaded, during that time they keep editing the note
-            // once the download is finished, the image note representing downloaded image will be used
+            // once the download is finished, the image note representing the downloaded image will be used
             // to replace the IMG link.
-            // However, there's another flow where user pastes the image and leaves the note before the images
+            // However, there's another flow where the user pastes the image and leaves the note before the images
             // are downloaded and the IMG references are not updated. For this occasion we have this code
             // which upon the download of all the images will update the note if the links have not been fixed before
 
             sql.transactional(() => {
-                const imageNotes = becca.getNotes(Object.values(imageUrlToNoteIdMapping), true);
+                const imageNotes = becca.getNotes(Object.values(imageUrlToAttachmentIdMapping), true);
 
                 const origNote = becca.getNote(noteId);
 
@@ -491,10 +594,10 @@ function downloadImages(noteId, content) {
                 const origContent = origNote.getContent();
                 let updatedContent = origContent;
 
-                for (const url in imageUrlToNoteIdMapping) {
-                    const imageNote = imageNotes.find(note => note.noteId === imageUrlToNoteIdMapping[url]);
+                for (const url in imageUrlToAttachmentIdMapping) {
+                    const imageNote = imageNotes.find(note => note.noteId === imageUrlToAttachmentIdMapping[url]);
 
-                    if (imageNote && !imageNote.isDeleted) {
+                    if (imageNote) {
                         updatedContent = replaceUrl(updatedContent, url, imageNote);
                     }
                 }
@@ -505,11 +608,6 @@ function downloadImages(noteId, content) {
 
                     asyncPostProcessContent(origNote, updatedContent);
 
-                    eventService.emit(eventService.ENTITY_CHANGED, {
-                        entityName: 'note_contents',
-                        entity: origNote
-                    });
-
                     console.log(`Fixed the image links for note '${noteId}' to the offline saved.`);
                 }
             });
@@ -519,29 +617,70 @@ function downloadImages(noteId, content) {
     return content;
 }
 
-function saveLinks(note, content) {
-    if (note.type !== 'text' && note.type !== 'relationMap') {
-        return content;
+/**
+ * @param {BNote} note
+ * @param {string} content
+ */
+function saveAttachments(note, content) {
+    const inlineAttachmentRe = /<a[^>]*?\shref=['"]data:([^;'">]+);base64,([^'">]+)['"][^>]*>(.*?)<\/a>/igm;
+    let attachmentMatch;
+
+    while (attachmentMatch = inlineAttachmentRe.exec(content)) {
+        const mime = attachmentMatch[1].toLowerCase();
+
+        const base64data = attachmentMatch[2];
+        const buffer = Buffer.from(base64data, 'base64');
+
+        const title = html2plaintext(attachmentMatch[3]);
+
+        const attachment = note.saveAttachment({
+            role: 'file',
+            mime: mime,
+            title: title,
+            content: buffer
+        });
+
+        content = `${content.substr(0, attachmentMatch.index)}<a class="reference-link" href="#root/${note.noteId}?viewMode=attachments&attachmentId=${attachment.attachmentId}">${title}</a>${content.substr(attachmentMatch.index + attachmentMatch[0].length)}`;
     }
 
-    if (note.isProtected && !protectedSessionService.isProtectedSessionAvailable()) {
-        return content;
+    // removing absolute references to server to keep it working between instances,
+    // we also omit / at the beginning to keep the paths relative
+    content = content.replace(/src="[^"]*\/api\/attachments\//g, 'src="api/attachments/');
+
+    return content;
+}
+
+/**
+ * @param {BNote} note
+ * @param {string} content
+ */
+function saveLinks(note, content) {
+    if ((note.type !== 'text' && note.type !== 'relationMap')
+        || (note.isProtected && !protectedSessionService.isProtectedSessionAvailable())) {
+        return {
+            forceFrontendReload: false,
+            content
+        };
     }
 
     const foundLinks = [];
+    let forceFrontendReload = false;
 
     if (note.type === 'text') {
         content = downloadImages(note.noteId, content);
+        content = saveAttachments(note, content);
 
         content = findImageLinks(content, foundLinks);
         content = findInternalLinks(content, foundLinks);
         content = findIncludeNoteLinks(content, foundLinks);
+
+        ({forceFrontendReload, content} = checkImageAttachments(note, content));
     }
     else if (note.type === 'relationMap') {
         findRelationMapLinks(content, foundLinks);
     }
     else {
-        throw new Error(`Unrecognized type ${note.type}`);
+        throw new Error(`Unrecognized type '${note.type}'`);
     }
 
     const existingLinks = note.getRelations().filter(rel =>
@@ -579,42 +718,60 @@ function saveLinks(note, content) {
         unusedLink.markAsDeleted();
     }
 
-    return content;
+    return { forceFrontendReload, content };
 }
 
-function saveNoteRevisionIfNeeded(note) {
+/** @param {BNote} note */
+function saveRevisionIfNeeded(note) {
     // files and images are versioned separately
-    if (note.type === 'file' || note.type === 'image' || note.hasLabel('disableVersioning')) {
+    if (note.type === 'file' || note.type === 'image' || note.isLabelTruthy('disableVersioning')) {
         return;
     }
 
     const now = new Date();
-    const noteRevisionSnapshotTimeInterval = parseInt(optionService.getOption('noteRevisionSnapshotTimeInterval'));
+    const revisionSnapshotTimeInterval = parseInt(optionService.getOption('revisionSnapshotTimeInterval'));
 
-    const revisionCutoff = dateUtils.utcDateTimeStr(new Date(now.getTime() - noteRevisionSnapshotTimeInterval * 1000));
+    const revisionCutoff = dateUtils.utcDateTimeStr(new Date(now.getTime() - revisionSnapshotTimeInterval * 1000));
 
-    const existingNoteRevisionId = sql.getValue(
-        "SELECT noteRevisionId FROM note_revisions WHERE noteId = ? AND utcDateCreated >= ?", [note.noteId, revisionCutoff]);
+    const existingRevisionId = sql.getValue(
+        "SELECT revisionId FROM revisions WHERE noteId = ? AND utcDateCreated >= ?", [note.noteId, revisionCutoff]);
 
     const msSinceDateCreated = now.getTime() - dateUtils.parseDateTime(note.utcDateCreated).getTime();
 
-    if (!existingNoteRevisionId && msSinceDateCreated >= noteRevisionSnapshotTimeInterval * 1000) {
-        note.saveNoteRevision();
+    if (!existingRevisionId && msSinceDateCreated >= revisionSnapshotTimeInterval * 1000) {
+        note.saveRevision();
     }
 }
 
-function updateNoteData(noteId, content) {
+function updateNoteData(noteId, content, attachments = []) {
     const note = becca.getNote(noteId);
 
     if (!note.isContentAvailable()) {
         throw new Error(`Note '${noteId}' is not available for change!`);
     }
 
-    saveNoteRevisionIfNeeded(note);
+    saveRevisionIfNeeded(note);
 
-    content = saveLinks(note, content);
+    const { forceFrontendReload, content: newContent } = saveLinks(note, content);
 
-    note.setContent(content);
+    note.setContent(newContent, { forceFrontendReload });
+
+    if (attachments?.length > 0) {
+        /** @var {Object<string, BAttachment>} */
+        const existingAttachmentsByTitle = utils.toMap(note.getAttachments({includeContentLength: false}), 'title');
+
+        for (const {attachmentId, role, mime, title, content, position} of attachments) {
+            if (attachmentId || !(title in existingAttachmentsByTitle)) {
+                note.saveAttachment({attachmentId, role, mime, title, content, position});
+            } else {
+                const existingAttachment = existingAttachmentsByTitle[title];
+                existingAttachment.role = role;
+                existingAttachment.mime = mime;
+                existingAttachment.position = position;
+                existingAttachment.setContent(content, {forceSave: true});
+            }
+        }
+    }
 }
 
 /**
@@ -622,14 +779,14 @@ function updateNoteData(noteId, content) {
  * @param {TaskContext} taskContext
  */
 function undeleteNote(noteId, taskContext) {
-    const note = sql.getRow("SELECT * FROM notes WHERE noteId = ?", [noteId]);
+    const noteRow = sql.getRow("SELECT * FROM notes WHERE noteId = ?", [noteId]);
 
-    if (!note.isDeleted) {
+    if (!noteRow.isDeleted) {
         log.error(`Note '${noteId}' is not deleted and thus cannot be undeleted.`);
         return;
     }
 
-    const undeletedParentBranchIds = getUndeletedParentBranchIds(noteId, note.deleteId);
+    const undeletedParentBranchIds = getUndeletedParentBranchIds(noteId, noteRow.deleteId);
 
     if (undeletedParentBranchIds.length === 0) {
         // cannot undelete if there's no undeleted parent
@@ -637,7 +794,7 @@ function undeleteNote(noteId, taskContext) {
     }
 
     for (const parentBranchId of undeletedParentBranchIds) {
-        undeleteBranch(parentBranchId, note.deleteId, taskContext);
+        undeleteBranch(parentBranchId, noteRow.deleteId, taskContext);
     }
 }
 
@@ -647,38 +804,48 @@ function undeleteNote(noteId, taskContext) {
  * @param {TaskContext} taskContext
  */
 function undeleteBranch(branchId, deleteId, taskContext) {
-    const branch = sql.getRow("SELECT * FROM branches WHERE branchId = ?", [branchId])
+    const branchRow = sql.getRow("SELECT * FROM branches WHERE branchId = ?", [branchId])
 
-    if (!branch.isDeleted) {
+    if (!branchRow.isDeleted) {
         return;
     }
 
-    const note = sql.getRow("SELECT * FROM notes WHERE noteId = ?", [branch.noteId]);
+    const noteRow = sql.getRow("SELECT * FROM notes WHERE noteId = ?", [branchRow.noteId]);
 
-    if (note.isDeleted && note.deleteId !== deleteId) {
+    if (noteRow.isDeleted && noteRow.deleteId !== deleteId) {
         return;
     }
 
-    new BBranch(branch).save();
+    new BBranch(branchRow).save();
 
     taskContext.increaseProgressCount();
 
-    if (note.isDeleted && note.deleteId === deleteId) {
+    if (noteRow.isDeleted && noteRow.deleteId === deleteId) {
         // becca entity was already created as skeleton in "new Branch()" above
-        const noteEntity = becca.getNote(note.noteId);
-        noteEntity.updateFromRow(note);
+        const noteEntity = becca.getNote(noteRow.noteId);
+        noteEntity.updateFromRow(noteRow);
         noteEntity.save();
 
-        const attributes = sql.getRows(`
+        const attributeRows = sql.getRows(`
                 SELECT * FROM attributes 
                 WHERE isDeleted = 1 
                   AND deleteId = ? 
                   AND (noteId = ? 
-                           OR (type = 'relation' AND value = ?))`, [deleteId, note.noteId, note.noteId]);
+                           OR (type = 'relation' AND value = ?))`, [deleteId, noteRow.noteId, noteRow.noteId]);
 
-        for (const attribute of attributes) {
+        for (const attributeRow of attributeRows) {
             // relation might point to a note which hasn't been undeleted yet and would thus throw up
-            new BAttribute(attribute).save({skipValidation: true});
+            new BAttribute(attributeRow).save({skipValidation: true});
+        }
+
+        const attachmentRows = sql.getRows(`
+            SELECT * FROM attachments
+            WHERE isDeleted = 1
+              AND deleteId = ?
+              AND ownerId = ?`, [deleteId, noteRow.noteId]);
+
+        for (const attachmentRow of attachmentRows) {
+            new BAttachment(attachmentRow).save();
         }
 
         const childBranchIds = sql.getColumn(`
@@ -686,7 +853,7 @@ function undeleteBranch(branchId, deleteId, taskContext) {
             FROM branches
             WHERE branches.isDeleted = 1
               AND branches.deleteId = ?
-              AND branches.parentNoteId = ?`, [deleteId, note.noteId]);
+              AND branches.parentNoteId = ?`, [deleteId, noteRow.noteId]);
 
         for (const childBranchId of childBranchIds) {
             undeleteBranch(childBranchId, deleteId, taskContext);
@@ -714,129 +881,43 @@ function scanForLinks(note, content) {
     }
 
     try {
-        const newContent = saveLinks(note, content);
+        sql.transactional(() => {
+            const { forceFrontendReload, content: newContent } = saveLinks(note, content);
 
-        if (content !== newContent) {
-            note.setContent(newContent);
-        }
+            if (content !== newContent) {
+                note.setContent(newContent, { forceFrontendReload });
+            }
+        });
     }
     catch (e) {
-        log.error(`Could not scan for links note ${note.noteId}: ${e.message} ${e.stack}`);
+        log.error(`Could not scan for links note '${note.noteId}': ${e.message} ${e.stack}`);
     }
 }
 
 /**
+ * @param {BNote} note
+ * @param {string} content
  * Things which have to be executed after updating content, but asynchronously (separate transaction)
  */
 async function asyncPostProcessContent(note, content) {
+    if (cls.isMigrationRunning()) {
+        // this is rarely needed for migrations, but can cause trouble by e.g. triggering downloads
+        return;
+    }
+
+    if (note.hasStringContent() && !utils.isString(content)) {
+        content = content.toString();
+    }
+
     scanForLinks(note, content);
 }
 
-function eraseNotes(noteIdsToErase) {
-    if (noteIdsToErase.length === 0) {
-        return;
-    }
-
-    sql.executeMany(`DELETE FROM notes WHERE noteId IN (???)`, noteIdsToErase);
-    setEntityChangesAsErased(sql.getManyRows(`SELECT * FROM entity_changes WHERE entityName = 'notes' AND entityId IN (???)`, noteIdsToErase));
-
-    sql.executeMany(`DELETE FROM note_contents WHERE noteId IN (???)`, noteIdsToErase);
-    setEntityChangesAsErased(sql.getManyRows(`SELECT * FROM entity_changes WHERE entityName = 'note_contents' AND entityId IN (???)`, noteIdsToErase));
-
-    // we also need to erase all "dependent" entities of the erased notes
-    const branchIdsToErase = sql.getManyRows(`SELECT branchId FROM branches WHERE noteId IN (???)`, noteIdsToErase)
-        .map(row => row.branchId);
-
-    eraseBranches(branchIdsToErase);
-
-    const attributeIdsToErase = sql.getManyRows(`SELECT attributeId FROM attributes WHERE noteId IN (???)`, noteIdsToErase)
-        .map(row => row.attributeId);
-
-    eraseAttributes(attributeIdsToErase);
-
-    const noteRevisionIdsToErase = sql.getManyRows(`SELECT noteRevisionId FROM note_revisions WHERE noteId IN (???)`, noteIdsToErase)
-        .map(row => row.noteRevisionId);
-
-    noteRevisionService.eraseNoteRevisions(noteRevisionIdsToErase);
-
-    log.info(`Erased notes: ${JSON.stringify(noteIdsToErase)}`);
-}
-
-function setEntityChangesAsErased(entityChanges) {
-    for (const ec of entityChanges) {
-        ec.isErased = true;
-
-        entityChangesService.addEntityChange(ec);
-    }
-}
-
-function eraseBranches(branchIdsToErase) {
-    if (branchIdsToErase.length === 0) {
-        return;
-    }
-
-    sql.executeMany(`DELETE FROM branches WHERE branchId IN (???)`, branchIdsToErase);
-
-    setEntityChangesAsErased(sql.getManyRows(`SELECT * FROM entity_changes WHERE entityName = 'branches' AND entityId IN (???)`, branchIdsToErase));
-
-    log.info(`Erased branches: ${JSON.stringify(branchIdsToErase)}`);
-}
-
-function eraseAttributes(attributeIdsToErase) {
-    if (attributeIdsToErase.length === 0) {
-        return;
-    }
-
-    sql.executeMany(`DELETE FROM attributes WHERE attributeId IN (???)`, attributeIdsToErase);
-
-    setEntityChangesAsErased(sql.getManyRows(`SELECT * FROM entity_changes WHERE entityName = 'attributes' AND entityId IN (???)`, attributeIdsToErase));
-
-    log.info(`Erased attributes: ${JSON.stringify(attributeIdsToErase)}`);
-}
-
-function eraseDeletedEntities(eraseEntitiesAfterTimeInSeconds = null) {
-    // this is important also so that the erased entity changes are sent to the connected clients
-    sql.transactional(() => {
-        if (eraseEntitiesAfterTimeInSeconds === null) {
-            eraseEntitiesAfterTimeInSeconds = optionService.getOptionInt('eraseEntitiesAfterTimeInSeconds');
-        }
-
-        const cutoffDate = new Date(Date.now() - eraseEntitiesAfterTimeInSeconds * 1000);
-
-        const noteIdsToErase = sql.getColumn("SELECT noteId FROM notes WHERE isDeleted = 1 AND utcDateModified <= ?", [dateUtils.utcDateTimeStr(cutoffDate)]);
-
-        eraseNotes(noteIdsToErase);
-
-        const branchIdsToErase = sql.getColumn("SELECT branchId FROM branches WHERE isDeleted = 1 AND utcDateModified <= ?", [dateUtils.utcDateTimeStr(cutoffDate)]);
-
-        eraseBranches(branchIdsToErase);
-
-        const attributeIdsToErase = sql.getColumn("SELECT attributeId FROM attributes WHERE isDeleted = 1 AND utcDateModified <= ?", [dateUtils.utcDateTimeStr(cutoffDate)]);
-
-        eraseAttributes(attributeIdsToErase);
-    });
-}
-
-function eraseNotesWithDeleteId(deleteId) {
-    const noteIdsToErase = sql.getColumn("SELECT noteId FROM notes WHERE deleteId = ?", [deleteId]);
-
-    eraseNotes(noteIdsToErase);
-
-    const branchIdsToErase = sql.getColumn("SELECT branchId FROM branches WHERE deleteId = ?", [deleteId]);
-
-    eraseBranches(branchIdsToErase);
-
-    const attributeIdsToErase = sql.getColumn("SELECT attributeId FROM attributes WHERE  deleteId = ?", [deleteId]);
-
-    eraseAttributes(attributeIdsToErase);
-}
-
-function eraseDeletedNotesNow() {
-    eraseDeletedEntities(0);
-}
-
-// do a replace in str - all keys should be replaced by the corresponding values
+// all keys should be replaced by the corresponding values
 function replaceByMap(str, mapObj) {
+    if (!mapObj) {
+        return str;
+    }
+
     const re = new RegExp(Object.keys(mapObj).join("|"),"g");
 
     return str.replace(re, matched => mapObj[matched]);
@@ -881,7 +962,7 @@ function duplicateSubtreeWithoutRoot(origNoteId, newNoteId) {
 
 function duplicateSubtreeInner(origNote, origBranch, newParentNoteId, noteIdMapping) {
     if (origNote.isProtected && !protectedSessionService.isProtectedSessionAvailable()) {
-        throw new Error(`Cannot duplicate note=${origNote.noteId} because it is protected and protected session is not available. Enter protected session and try again.`);
+        throw new Error(`Cannot duplicate note '${origNote.noteId}' because it is protected and protected session is not available. Enter protected session and try again.`);
     }
 
     const newNoteId = noteIdMapping[origNote.noteId];
@@ -939,7 +1020,7 @@ function duplicateSubtreeInner(origNote, origBranch, newParentNoteId, noteIdMapp
     const existingNote = becca.notes[newNoteId];
 
     if (existingNote && existingNote.title !== undefined) { // checking that it's not just note's skeleton created because of Branch above
-        // note has multiple clones and was already created from another placement in the tree
+        // note has multiple clones and was already created from another placement in the tree,
         // so a branch is all we need for this clone
         return {
             note: existingNote,
@@ -966,13 +1047,6 @@ function getNoteIdMapping(origNote) {
     return noteIdMapping;
 }
 
-sqlInit.dbReady.then(() => {
-    // first cleanup kickoff 5 minutes after startup
-    setTimeout(cls.wrap(() => eraseDeletedEntities()), 5 * 60 * 1000);
-
-    setInterval(cls.wrap(() => eraseDeletedEntities()), 4 * 3600 * 1000);
-});
-
 module.exports = {
     createNewNote,
     createNewNoteWithTarget,
@@ -983,9 +1057,7 @@ module.exports = {
     duplicateSubtreeWithoutRoot,
     getUndeletedParentBranchIds,
     triggerNoteTitleChanged,
-    eraseDeletedNotesNow,
-    eraseNotesWithDeleteId,
-    saveNoteRevisionIfNeeded,
+    saveRevisionIfNeeded,
     downloadImages,
     asyncPostProcessContent
 };

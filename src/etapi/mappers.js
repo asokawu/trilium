@@ -6,6 +6,7 @@ function mapNoteToPojo(note) {
         title: note.title,
         type: note.type,
         mime: note.mime,
+        blobId: note.blobId,
         dateCreated: note.dateCreated,
         dateModified: note.dateModified,
         utcDateCreated: note.utcDateCreated,
@@ -45,8 +46,26 @@ function mapAttributeToPojo(attr) {
     };
 }
 
+/** @param {BAttachment} attachment */
+function mapAttachmentToPojo(attachment) {
+    return {
+        attachmentId: attachment.attachmentId,
+        ownerId: attachment.ownerId,
+        role: attachment.role,
+        mime: attachment.mime,
+        title: attachment.title,
+        position: attachment.position,
+        blobId: attachment.blobId,
+        dateModified: attachment.dateModified,
+        utcDateModified: attachment.utcDateModified,
+        utcDateScheduledForErasureSince: attachment.utcDateScheduledForErasureSince,
+        contentLength: attachment.contentLength
+    };
+}
+
 module.exports = {
     mapNoteToPojo,
     mapBranchToPojo,
-    mapAttributeToPojo
+    mapAttributeToPojo,
+    mapAttachmentToPojo
 };

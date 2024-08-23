@@ -1,6 +1,4 @@
-import froca from "../../services/froca.js";
 import AbstractTextTypeWidget from "./abstract_text_type_widget.js";
-import treeService from "../../services/tree.js";
 import libraryLoader from "../../services/library_loader.js";
 
 const TPL = `
@@ -93,15 +91,12 @@ export default class ReadOnlyTextTypeWidget extends AbstractTextTypeWidget {
         // (see https://github.com/zadam/trilium/issues/1590 for example of such conflict)
         await libraryLoader.requireLibrary(libraryLoader.CKEDITOR);
 
-        const noteComplement = await froca.getNoteComplement(note.noteId);
+        const blob = await note.getBlob();
 
-        this.$content.html(noteComplement.content);
+        this.$content.html(blob.content);
 
         this.$content.find("a.reference-link").each(async (_, el) => {
-            const notePath = $(el).attr('href');
-            const noteId = treeService.getNoteIdFromNotePath(notePath);
-
-            this.loadReferenceLinkTitle(noteId, $(el));
+            this.loadReferenceLinkTitle($(el));
         });
 
         this.$content.find("section").each(async (_, el) => {

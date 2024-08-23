@@ -107,6 +107,13 @@ async function deleteNotes(branchIdsToDelete, forceDeleteAllClones = false) {
         return false;
     }
 
+    try {
+        await activateParentNotePath();
+    }
+    catch (e) {
+        console.error(e);
+    }
+
     const taskId = utils.randomString(10);
 
     let counter = 0;
@@ -132,6 +139,16 @@ async function deleteNotes(branchIdsToDelete, forceDeleteAllClones = false) {
     }
 
     return true;
+}
+
+async function activateParentNotePath() {
+    // this is not perfect, maybe we should find the next/previous sibling, but that's more complex
+    const activeContext = appContext.tabManager.getActiveContext();
+    const parentNotePathArr = activeContext.notePathArray.slice(0, -1);
+
+    if (parentNotePathArr.length > 0) {
+        activeContext.setNote(parentNotePathArr.join("/"));
+    }
 }
 
 async function moveNodeUpInHierarchy(node) {
@@ -182,7 +199,7 @@ function makeToast(id, message) {
 }
 
 ws.subscribeToMessages(async message => {
-    if (message.taskType !== 'delete-notes') {
+    if (message.taskType !== 'deleteNotes') {
         return;
     }
 
@@ -237,7 +254,7 @@ async function cloneNoteToParentNote(childNoteId, parentNoteId, prefix) {
     }
 }
 
-// beware that first arg is noteId and second is branchId!
+// beware that the first arg is noteId and the second is branchId!
 async function cloneNoteAfter(noteId, afterBranchId) {
     const resp = await server.put(`notes/${noteId}/clone-after/${afterBranchId}`);
 

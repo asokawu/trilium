@@ -1,11 +1,17 @@
 import promotedAttributeDefinitionParser from '../services/promoted_attribute_definition_parser.js';
 
 /**
+ * There are currently only two types of attributes, labels or relations.
+ * @typedef {"label" | "relation"} AttributeType
+ */
+
+/**
  * Attribute is an abstract concept which has two real uses - label (key - value pair)
  * and relation (representing named relationship between source and target note)
  */
 class FAttribute {
     constructor(froca, row) {
+        /** @type {Froca} */
         this.froca = froca;
 
         this.update(row);
@@ -16,7 +22,7 @@ class FAttribute {
         this.attributeId = row.attributeId;
         /** @type {string} */
         this.noteId = row.noteId;
-        /** @type {string} */
+        /** @type {AttributeType} */
         this.type = row.type;
         /** @type {string} */
         this.name = row.name;

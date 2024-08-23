@@ -70,14 +70,21 @@ export default class NoteTitleWidget extends NoteContextAwareWidget {
     }
 
     async refreshWithNote(note) {
-        this.$noteTitle.val(note.title);
+        const isReadOnly = (note.isProtected && !protectedSessionHolder.isProtectedSessionAvailable())
+            || ['_lbRoot', '_lbAvailableLaunchers', '_lbVisibleLaunchers'].includes(note.noteId)
+            || this.noteContext.viewScope.viewMode !== 'default';
 
-        this.$noteTitle.prop("readonly", (note.isProtected && !protectedSessionHolder.isProtectedSessionAvailable())
-                                        || ['_lbRoot', '_lbAvailableLaunchers', '_lbVisibleLaunchers'].includes(note.noteId));
+        this.$noteTitle.val(
+            isReadOnly
+                ? await this.noteContext.getNavigationTitle()
+                : note.title
+        );
+        this.$noteTitle.prop("readonly", isReadOnly);
 
         this.setProtectedStatus(note);
     }
 
+    /** @param {FNote} note */
     setProtectedStatus(note) {
         this.$noteTitle.toggleClass("protected", !!note.isProtected);
     }

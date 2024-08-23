@@ -4,9 +4,9 @@ import utils from "../../../../services/utils.js";
 
 const TPL = `
 <div class="options-section">
-    <h4>Zoom factor (desktop build only)</h4>
+    <h4>Zoom Factor (desktop build only)</h4>
 
-    <input type="number" class="zoom-factor-select form-control" min="0.3" max="2.0" step="0.1"/>
+    <input type="number" class="zoom-factor-select form-control options-number-input" min="0.3" max="2.0" step="0.1"/>
     <p>Zooming can be controlled with CTRL+- and CTRL+= shortcuts as well.</p>
 </div>`;
 

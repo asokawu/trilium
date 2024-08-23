@@ -15,19 +15,19 @@ export default class ShortcutComponent extends Component {
         });
     }
 
-    bindNoteShortcutHandler(label) {
-        const handler = () => appContext.tabManager.getActiveContext().setNote(label.noteId);
-        const namespace = label.attributeId;
+    bindNoteShortcutHandler(labelOrRow) {
+        const handler = () => appContext.tabManager.getActiveContext().setNote(labelOrRow.noteId);
+        const namespace = labelOrRow.attributeId;
 
-        if (label.isDeleted) {
+        if (labelOrRow.isDeleted) { // only applicable if row
             shortcutService.removeGlobalShortcut(namespace);
         } else {
-            shortcutService.bindGlobalShortcut(label.value, handler, namespace);
+            shortcutService.bindGlobalShortcut(labelOrRow.value, handler, namespace);
         }
     }
 
     async entitiesReloadedEvent({loadResults}) {
-        for (const attr of loadResults.getAttributes()) {
+        for (const attr of loadResults.getAttributeRows()) {
             if (attr.type === 'label' && attr.name === 'keyboardShortcut') {
                 const note = await froca.getNote(attr.noteId);
                 // launcher shortcuts are handled specifically

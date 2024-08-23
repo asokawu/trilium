@@ -1,25 +1,27 @@
 "use strict";
 
-const sql = require('../services/sql');
-const eventService = require('../services/events');
-const becca = require('./becca');
-const sqlInit = require('../services/sql_init');
-const log = require('../services/log');
-const BNote = require('./entities/bnote');
-const BBranch = require('./entities/bbranch');
-const BAttribute = require('./entities/battribute');
-const BOption = require('./entities/boption');
-const BEtapiToken = require("./entities/betapi_token");
-const cls = require("../services/cls");
-const entityConstructor = require("../becca/entity_constructor");
+const sql = require('../services/sql.js');
+const eventService = require('../services/events.js');
+const becca = require('./becca.js');
+const sqlInit = require('../services/sql_init.js');
+const log = require('../services/log.js');
+const BNote = require('./entities/bnote.js');
+const BBranch = require('./entities/bbranch.js');
+const BAttribute = require('./entities/battribute.js');
+const BOption = require('./entities/boption.js');
+const BEtapiToken = require('./entities/betapi_token.js');
+const cls = require('../services/cls.js');
+const entityConstructor = require('../becca/entity_constructor.js');
 
 const beccaLoaded = new Promise((res, rej) => {
     sqlInit.dbReady.then(() => {
-        load();
+        cls.init(() => {
+            load();
 
-        cls.init(() => require('../services/options_init').initStartupOptions());
+            require('../services/options_init.js').initStartupOptions();
 
-        res();
+            res();
+        });
     });
 });
 
@@ -27,32 +29,35 @@ function load() {
     const start = Date.now();
     becca.reset();
 
-    // using raw query and passing arrays to avoid allocating new objects
-    // this is worth it for becca load since it happens every run and blocks the app until finished
+    // we know this is slow and the total becca load time is logged
+    sql.disableSlowQueryLogging(() => {
+        // using a raw query and passing arrays to avoid allocating new objects,
+        // this is worth it for the becca load since it happens every run and blocks the app until finished
 
-    for (const row of sql.getRawRows(`SELECT noteId, title, type, mime, isProtected, dateCreated, dateModified, utcDateCreated, utcDateModified FROM notes WHERE isDeleted = 0`)) {
-        new BNote().update(row).init();
-    }
+        for (const row of sql.getRawRows(`SELECT noteId, title, type, mime, isProtected, blobId, dateCreated, dateModified, utcDateCreated, utcDateModified FROM notes WHERE isDeleted = 0`)) {
+            new BNote().update(row).init();
+        }
 
-    const branchRows = sql.getRawRows(`SELECT branchId, noteId, parentNoteId, prefix, notePosition, isExpanded, utcDateModified FROM branches WHERE isDeleted = 0`);
-    // in-memory sort is faster than in the DB
-    branchRows.sort((a, b) => a.notePosition - b.notePosition);
+        const branchRows = sql.getRawRows(`SELECT branchId, noteId, parentNoteId, prefix, notePosition, isExpanded, utcDateModified FROM branches WHERE isDeleted = 0`);
+        // in-memory sort is faster than in the DB
+        branchRows.sort((a, b) => a.notePosition - b.notePosition);
 
-    for (const row of branchRows) {
-        new BBranch().update(row).init();
-    }
+        for (const row of branchRows) {
+            new BBranch().update(row).init();
+        }
 
-    for (const row of sql.getRawRows(`SELECT attributeId, noteId, type, name, value, isInheritable, position, utcDateModified FROM attributes WHERE isDeleted = 0`)) {
-        new BAttribute().update(row).init();
-    }
+        for (const row of sql.getRawRows(`SELECT attributeId, noteId, type, name, value, isInheritable, position, utcDateModified FROM attributes WHERE isDeleted = 0`)) {
+            new BAttribute().update(row).init();
+        }
 
-    for (const row of sql.getRows(`SELECT name, value, isSynced, utcDateModified FROM options`)) {
-        new BOption(row);
-    }
+        for (const row of sql.getRows(`SELECT name, value, isSynced, utcDateModified FROM options`)) {
+            new BOption(row);
+        }
 
-    for (const row of sql.getRows(`SELECT etapiTokenId, name, tokenHash, utcDateCreated, utcDateModified FROM etapi_tokens WHERE isDeleted = 0`)) {
-        new BEtapiToken(row);
-    }
+        for (const row of sql.getRows(`SELECT etapiTokenId, name, tokenHash, utcDateCreated, utcDateModified FROM etapi_tokens WHERE isDeleted = 0`)) {
+            new BEtapiToken(row);
+        }
+    });
 
     for (const noteId in becca.notes) {
         becca.notes[noteId].sortParents();
@@ -63,10 +68,10 @@ function load() {
     log.info(`Becca (note cache) load took ${Date.now() - start}ms`);
 }
 
-function reload() {
+function reload(reason) {
     load();
 
-    require('../services/ws').reloadFrontend();
+    require('../services/ws.js').reloadFrontend(reason || "becca reloaded");
 }
 
 eventService.subscribeBeccaLoader([eventService.ENTITY_CHANGE_SYNCED],  ({entityName, entityRow}) => {
@@ -105,7 +110,7 @@ eventService.subscribeBeccaLoader(eventService.ENTITY_CHANGED,  ({entityName, en
  *
  * @param entityName
  * @param entityRow - can be a becca entity (change comes from this trilium instance) or just a row (from sync).
- *                    Should be therefore treated as a row.
+ *                    It should be therefore treated as a row.
  */
 function postProcessEntityUpdate(entityName, entityRow) {
     if (entityName === 'notes') {
@@ -188,7 +193,7 @@ function branchUpdated(branchRow) {
         childNote.sortParents();
 
         // notes in the subtree can get new inherited attributes
-        // this is in theory needed upon branch creation, but there's no create event for sync changes
+        // this is in theory needed upon branch creation, but there's no "create" event for sync changes
         childNote.invalidateSubTree();
     }
 

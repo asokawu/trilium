@@ -1,12 +1,13 @@
 "use strict";
 
-const noteService = require('../../services/notes');
-const imageService = require('../../services/image');
-const protectedSessionService = require('../protected_session');
-const commonmark = require('commonmark');
-const mimeService = require('./mime');
-const utils = require('../../services/utils');
-const htmlSanitizer = require('../html_sanitizer');
+const noteService = require('../../services/notes.js');
+const imageService = require('../../services/image.js');
+const protectedSessionService = require('../protected_session.js');
+const markdownService = require('./markdown.js');
+const mimeService = require('./mime.js');
+const utils = require('../../services/utils.js');
+const importUtils = require('./utils.js');
+const htmlSanitizer = require('../html_sanitizer.js');
 
 function importSingleFile(taskContext, file, parentNote) {
     const mime = mimeService.getMime(file.originalname) || file.mimetype;
@@ -61,11 +62,11 @@ function importFile(taskContext, file, parentNote) {
 
 function importCodeNote(taskContext, file, parentNote) {
     const title = utils.getNoteTitle(file.originalname, taskContext.data.replaceUnderscoresWithSpaces);
-    const content = file.buffer.toString("UTF-8");
+    const content = file.buffer.toString("utf-8");
     const detectedMime = mimeService.getMime(file.originalname) || file.mimetype;
     const mime = mimeService.normalizeMimeType(detectedMime);
 
-    const {note} = noteService.createNewNote({
+    const { note } = noteService.createNewNote({
         parentNoteId: parentNote.noteId,
         title,
         content,
@@ -81,7 +82,7 @@ function importCodeNote(taskContext, file, parentNote) {
 
 function importPlainText(taskContext, file, parentNote) {
     const title = utils.getNoteTitle(file.originalname, taskContext.data.replaceUnderscoresWithSpaces);
-    const plainTextContent = file.buffer.toString("UTF-8");
+    const plainTextContent = file.buffer.toString("utf-8");
     const htmlContent = convertTextToHtml(plainTextContent);
 
     const {note} = noteService.createNewNote({
@@ -119,17 +120,12 @@ function convertTextToHtml(text) {
 function importMarkdown(taskContext, file, parentNote) {
     const title = utils.getNoteTitle(file.originalname, taskContext.data.replaceUnderscoresWithSpaces);
 
-    const markdownContent = file.buffer.toString("UTF-8");
+    const markdownContent = file.buffer.toString("utf-8");
+    let htmlContent = markdownService.renderToHtml(markdownContent, title);
 
-    const reader = new commonmark.Parser();
-    const writer = new commonmark.HtmlRenderer();
-
-    const parsed = reader.parse(markdownContent);
-    let htmlContent = writer.render(parsed);
-
-    htmlContent = htmlSanitizer.sanitize(htmlContent);
-
-    htmlContent = handleH1(htmlContent, title);
+    if (taskContext.data.safeImport) {
+        htmlContent = htmlSanitizer.sanitize(htmlContent);
+    }
 
     const {note} = noteService.createNewNote({
         parentNoteId: parentNote.noteId,
@@ -145,24 +141,15 @@ function importMarkdown(taskContext, file, parentNote) {
     return note;
 }
 
-function handleH1(content, title) {
-    content = content.replace(/<h1>([^<]*)<\/h1>/gi, (match, text) => {
-        if (title.trim() === text.trim()) {
-            return ""; // remove whole H1 tag
-        } else {
-            return `<h2>${text}</h2>`;
-        }
-    });
-    return content;
-}
-
 function importHtml(taskContext, file, parentNote) {
     const title = utils.getNoteTitle(file.originalname, taskContext.data.replaceUnderscoresWithSpaces);
-    let content = file.buffer.toString("UTF-8");
+    let content = file.buffer.toString("utf-8");
 
-    content = htmlSanitizer.sanitize(content);
+    if (taskContext.data.safeImport) {
+        content = htmlSanitizer.sanitize(content);
+    }
 
-    content = handleH1(content, title);
+    content = importUtils.handleH1(content, title);
 
     const {note} = noteService.createNewNote({
         parentNoteId: parentNote.noteId,
@@ -178,6 +165,32 @@ function importHtml(taskContext, file, parentNote) {
     return note;
 }
 
+/**
+ * @param {TaskContext} taskContext
+ * @param file
+ * @param {BNote} parentNote
+ * @returns {BNote}
+ */
+function importAttachment(taskContext, file, parentNote) {
+    const mime = mimeService.getMime(file.originalname) || file.mimetype;
+
+    if (mime.startsWith("image/")) {
+        imageService.saveImageToAttachment(parentNote.noteId, file.buffer, file.originalname, taskContext.data.shrinkImages);
+
+        taskContext.increaseProgressCount();
+    } else {
+        parentNote.saveAttachment({
+            title: file.originalname,
+            content: file.buffer,
+            role: 'file',
+            mime: mime
+        });
+
+        taskContext.increaseProgressCount();
+    }
+}
+
 module.exports = {
-    importSingleFile
+    importSingleFile,
+    importAttachment
 };

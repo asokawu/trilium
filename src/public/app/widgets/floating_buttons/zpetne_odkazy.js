@@ -85,6 +85,11 @@ export default class BacklinksWidget extends NoteContextAwareWidget {
     async refreshWithNote(note) {
         this.clearItems();
 
+        if (this.noteContext?.viewScope?.viewMode !== 'default') {
+            this.toggle(false);
+            return;
+        }
+
         // can't use froca since that would count only relations from loaded notes
         const resp = await server.get(`note-map/${this.noteId}/backlink-count`);
 
@@ -126,7 +131,7 @@ export default class BacklinksWidget extends NoteContextAwareWidget {
         for (const backlink of backlinks) {
             const $item = $("<div>");
 
-            $item.append(await linkService.createNoteLink(backlink.noteId, {
+            $item.append(await linkService.createLink(backlink.noteId, {
                 showNoteIcon: true,
                 showNotePath: true,
                 showTooltip: false

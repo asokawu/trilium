@@ -1,14 +1,17 @@
 "use strict";
 
-const sql = require('./sql');
-const eventChangesService = require('./entity_changes');
-const treeService = require('./tree');
-const BBranch = require('../becca/entities/bbranch');
-const becca = require("../becca/becca");
-const beccaService = require("../becca/becca_service");
-const log = require("./log");
+const sql = require('./sql.js');
+const eventChangesService = require('./entity_changes.js');
+const treeService = require('./tree.js');
+const BBranch = require('../becca/entities/bbranch.js');
+const becca = require('../becca/becca.js');
+const log = require('./log.js');
 
-function cloneNoteToParentNote(noteId, parentNoteId, prefix) {
+function cloneNoteToParentNote(noteId, parentNoteId, prefix = null) {
+    if (!(noteId in becca.notes) || !(parentNoteId in becca.notes)) {
+        return { success: false, message: 'Note cannot be cloned because either the cloned note or the intended parent is deleted.' };
+    }
+
     const parentNote = becca.getNote(parentNoteId);
 
     if (parentNote.type === 'search') {
@@ -16,10 +19,6 @@ function cloneNoteToParentNote(noteId, parentNoteId, prefix) {
             success: false,
             message: "Can't clone into a search note"
         };
-    }
-
-    if (isNoteDeleted(noteId) || isNoteDeleted(parentNoteId)) {
-        return { success: false, message: 'Note cannot be cloned because either the cloned note or the intended parent is deleted.' };
     }
 
     const validationResult = treeService.validateParentChild(parentNoteId, noteId);
@@ -48,7 +47,7 @@ function cloneNoteToBranch(noteId, parentBranchId, prefix) {
     const parentBranch = becca.getBranch(parentBranchId);
 
     if (!parentBranch) {
-        return { success: false, message: `Parent branch ${parentBranchId} does not exist.` };
+        return { success: false, message: `Parent branch '${parentBranchId}' does not exist.` };
     }
 
     const ret = cloneNoteToParentNote(noteId, parentBranch.noteId, prefix);
@@ -60,9 +59,9 @@ function cloneNoteToBranch(noteId, parentBranchId, prefix) {
 }
 
 function ensureNoteIsPresentInParent(noteId, parentNoteId, prefix) {
-    if (isNoteDeleted(noteId)) {
+    if (!(noteId in becca.notes)) {
         return { branch: null, success: false, message: `Note '${noteId}' is deleted.` };
-    } else if (isNoteDeleted(parentNoteId)) {
+    } else if (!(parentNoteId in becca.notes)) {
         return { branch: null, success: false, message: `Note '${parentNoteId}' is deleted.` };
     }
 
@@ -136,8 +135,10 @@ function cloneNoteAfter(noteId, afterBranchId) {
 
     const afterNote = becca.getBranch(afterBranchId);
 
-    if (isNoteDeleted(noteId) || isNoteDeleted(afterNote.parentNoteId)) {
-        return { success: false, message: 'Note is deleted.' };
+    if (!(noteId in becca.notes)) {
+        return { success: false, message: `Note to be cloned '${noteId}' is deleted or does not exist.` };
+    } else if (!(afterNote.parentNoteId in becca.notes)) {
+        return { success: false, message: `After note '${afterNote.parentNoteId}' is deleted or does not exist.` };
     }
 
     const parentNote = becca.getNote(afterNote.parentNoteId);
@@ -155,12 +156,12 @@ function cloneNoteAfter(noteId, afterBranchId) {
         return validationResult;
     }
 
-    // we don't change utcDateModified so other changes are prioritized in case of conflict
+    // we don't change utcDateModified, so other changes are prioritized in case of conflict
     // also we would have to sync all those modified branches otherwise hash checks would fail
     sql.execute("UPDATE branches SET notePosition = notePosition + 10 WHERE parentNoteId = ? AND notePosition > ? AND isDeleted = 0",
         [afterNote.parentNoteId, afterNote.notePosition]);
 
-    eventChangesService.addNoteReorderingEntityChange(afterNote.parentNoteId);
+    eventChangesService.putNoteReorderingEntityChange(afterNote.parentNoteId);
 
     const branch = new BBranch({
         noteId: noteId,
@@ -172,12 +173,6 @@ function cloneNoteAfter(noteId, afterBranchId) {
     log.info(`Cloned note '${noteId}' into parent note '${afterNote.parentNoteId}' after note '${afterNote.noteId}', branch '${afterBranchId}'`);
 
     return { success: true, branchId: branch.branchId };
-}
-
-function isNoteDeleted(noteId) {
-    const note = becca.getNote(noteId);
-
-    return !note || note.isDeleted;
 }
 
 module.exports = {

@@ -34,7 +34,7 @@ export default class SplitNoteContainer extends FlexContainer {
         this.child(widget);
     }
 
-    async openNewNoteSplitEvent({ntxId, notePath, hoistedNoteId}) {
+    async openNewNoteSplitEvent({ntxId, notePath, hoistedNoteId, viewScope}) {
         const mainNtxId = appContext.tabManager.getActiveMainContext().ntxId;
 
         if (!ntxId) {
@@ -63,7 +63,7 @@ export default class SplitNoteContainer extends FlexContainer {
         await appContext.tabManager.activateNoteContext(noteContext.ntxId);
 
         if (notePath) {
-            await noteContext.setNote(notePath);
+            await noteContext.setNote(notePath, viewScope);
         }
         else {
             await noteContext.setEmpty();
@@ -136,6 +136,15 @@ export default class SplitNoteContainer extends FlexContainer {
         }
     }
 
+    contextsReopenedEvent({ntxId, afterNtxId}) {
+        if (ntxId === undefined || afterNtxId === undefined) {
+            // no single split reopened
+            return;
+        }
+        this.$widget.find(`[data-ntx-id="${ntxId}"]`)
+            .insertAfter(this.$widget.find(`[data-ntx-id="${afterNtxId}"]`));
+    }
+
     async refresh() {
         this.toggleExt(true);
     }
@@ -157,7 +166,7 @@ export default class SplitNoteContainer extends FlexContainer {
     /**
      * widget.hasBeenAlreadyShown is intended for lazy loading of cached tabs - initial note switches of new tabs
      * are not executed, we're waiting for the first tab activation, and then we update the tab. After this initial
-     * activation further note switches are always propagated to the tabs.
+     * activation, further note switches are always propagated to the tabs.
      */
     handleEventInChildren(name, data) {
         if (['noteSwitched', 'noteSwitchedAndActivated'].includes(name)) {

@@ -19,7 +19,6 @@ import RelationMapTypeWidget from "./type_widgets/relation_map.js";
 import CanvasTypeWidget from "./type_widgets/canvas.js";
 import ProtectedSessionTypeWidget from "./type_widgets/protected_session.js";
 import BookTypeWidget from "./type_widgets/book.js";
-import DeletedTypeWidget from "./type_widgets/deleted.js";
 import ReadOnlyTextTypeWidget from "./type_widgets/read_only_text.js";
 import ReadOnlyCodeTypeWidget from "./type_widgets/read_only_code.js";
 import NoneTypeWidget from "./type_widgets/none.js";
@@ -27,6 +26,8 @@ import NoteMapTypeWidget from "./type_widgets/note_map.js";
 import WebViewTypeWidget from "./type_widgets/web_view.js";
 import DocTypeWidget from "./type_widgets/doc.js";
 import ContentWidgetTypeWidget from "./type_widgets/content_widget.js";
+import AttachmentListTypeWidget from "./type_widgets/attachment_list.js";
+import AttachmentDetailTypeWidget from "./type_widgets/attachment_detail.js";
 
 const TPL = `
 <div class="note-detail">
@@ -45,7 +46,6 @@ const TPL = `
 
 const typeWidgetClasses = {
     'empty': EmptyTypeWidget,
-    'deleted': DeletedTypeWidget,
     'editableText': EditableTextTypeWidget,
     'readOnlyText': ReadOnlyTextTypeWidget,
     'editableCode': EditableCodeTypeWidget,
@@ -61,7 +61,9 @@ const typeWidgetClasses = {
     'noteMap': NoteMapTypeWidget,
     'webView': WebViewTypeWidget,
     'doc': DocTypeWidget,
-    'contentWidget': ContentWidgetTypeWidget
+    'contentWidget': ContentWidgetTypeWidget,
+    'attachmentDetail': AttachmentDetailTypeWidget,
+    'attachmentList': AttachmentListTypeWidget
 };
 
 export default class NoteDetailWidget extends NoteContextAwareWidget {
@@ -84,6 +86,8 @@ export default class NoteDetailWidget extends NoteContextAwareWidget {
             protectedSessionHolder.touchProtectedSessionIfNecessary(note);
 
             await server.put(`notes/${noteId}/data`, data, this.componentId);
+
+            this.getTypeWidget().dataSaved?.();
         });
 
         appContext.addBeforeUnloadListener(this);
@@ -96,31 +100,6 @@ export default class NoteDetailWidget extends NoteContextAwareWidget {
     doRender() {
         this.$widget = $(TPL);
         this.contentSized();
-
-        this.$widget.on("dragover", e => e.preventDefault());
-
-        this.$widget.on("dragleave", e => e.preventDefault());
-
-        this.$widget.on("drop", async e => {
-            const activeNote = appContext.tabManager.getActiveContextNote();
-
-            if (!activeNote) {
-                return;
-            }
-
-            const files = [...e.originalEvent.dataTransfer.files]; // chrome has issue that dataTransfer.files empties after async operation
-
-            const importService = await import("../services/import.js");
-
-            importService.uploadFiles(activeNote.noteId, files, {
-                safeImport: true,
-                shrinkImages: true,
-                textImportedAsText: true,
-                codeImportedAsCode: true,
-                explodeArchives: true,
-                replaceUnderscoresWithSpaces: true
-            });
-        });
     }
 
     async refresh() {
@@ -145,7 +124,7 @@ export default class NoteDetailWidget extends NoteContextAwareWidget {
 
             await typeWidget.handleEvent('setNoteContext', {noteContext: this.noteContext});
 
-            // this is happening in update() so note has been already set, and we need to reflect this
+            // this is happening in update(), so note has been already set, and we need to reflect this
             await typeWidget.handleEvent('noteSwitched', {
                 noteContext: this.noteContext,
                 notePath: this.noteContext.notePath
@@ -163,14 +142,18 @@ export default class NoteDetailWidget extends NoteContextAwareWidget {
     checkFullHeight() {
         // https://github.com/zadam/trilium/issues/2522
         this.$widget.toggleClass("full-height",
-            !this.noteContext.hasNoteList()
-            && ['editableText', 'editableCode', 'canvas', 'webView', 'noteMap'].includes(this.type)
-            && this.mime !== 'text/x-sqlite;schema=trilium');
+            (
+                !this.noteContext.hasNoteList()
+                && ['canvas', 'webView', 'noteMap'].includes(this.type)
+                && this.mime !== 'text/x-sqlite;schema=trilium'
+            )
+            || this.noteContext.viewScope.viewMode === 'attachments'
+        );
     }
 
     getTypeWidget() {
         if (!this.typeWidgets[this.type]) {
-            throw new Error(`Could not find typeWidget for type: ${this.type}`);
+            throw new Error(`Could not find typeWidget for type '${this.type}'`);
         }
 
         return this.typeWidgets[this.type];
@@ -181,14 +164,15 @@ export default class NoteDetailWidget extends NoteContextAwareWidget {
 
         if (!note) {
             return "empty";
-        } else if (note.isDeleted) {
-            return "deleted";
         }
 
         let type = note.type;
+        const viewScope = this.noteContext.viewScope;
 
-        if (type === 'text' && this.noteContext.viewScope.viewMode === 'source') {
+        if (viewScope.viewMode === 'source') {
             type = 'readOnlyCode';
+        } else if (viewScope.viewMode === 'attachments') {
+            type = viewScope.attachmentId ? 'attachmentDetail' : 'attachmentList';
         } else if (type === 'text' && await this.noteContext.isReadOnly()) {
             type = 'readOnlyText';
         } else if ((type === 'code' || type === 'mermaid') && await this.noteContext.isReadOnly()) {
@@ -209,12 +193,27 @@ export default class NoteDetailWidget extends NoteContextAwareWidget {
     }
 
     async focusOnDetailEvent({ntxId}) {
-        if (this.noteContext.ntxId === ntxId) {
-            await this.refresh();
+        if (this.noteContext.ntxId !== ntxId) {
+            return;
+        }
 
-            const widget = this.getTypeWidget();
-            await widget.initialized;
-            widget.focus();
+        await this.refresh();
+        const widget = this.getTypeWidget();
+        await widget.initialized;
+        widget.focus();
+    }
+
+    async scrollToEndEvent({ntxId}) {
+        if (this.noteContext.ntxId !== ntxId) {
+            return;
+        }
+
+        await this.refresh();
+        const widget = this.getTypeWidget();
+        await widget.initialized;
+
+        if (widget.scrollToEnd) {
+            widget.scrollToEnd();
         }
     }
 
@@ -259,10 +258,11 @@ export default class NoteDetailWidget extends NoteContextAwareWidget {
                         .append($("<h2>").text(this.note.title))
                         .append($promotedAttributes)
                         .prop('outerHTML'),
+
             footer: `
-<script src="${assetPath}/libraries/katex/katex.min.js"></script>
-<script src="${assetPath}/libraries/katex/mhchem.min.js"></script>
-<script src="${assetPath}/libraries/katex/auto-render.min.js"></script>
+<script src="${assetPath}/node_modules/katex/dist/katex.min.js"></script>
+<script src="${assetPath}/node_modules/katex/dist/contrib/mhchem.min.js"></script>
+<script src="${assetPath}/node_modules/katex/dist/contrib/auto-render.min.js"></script>
 <script>
     document.body.className += ' ck-content printed-content';
     
@@ -274,7 +274,7 @@ export default class NoteDetailWidget extends NoteContextAwareWidget {
                 `${assetPath}/libraries/codemirror/codemirror.css`,
                 `${assetPath}/libraries/ckeditor/ckeditor-content.css`,
                 `${assetPath}/libraries/bootstrap/css/bootstrap.min.css`,
-                `${assetPath}/libraries/katex/katex.min.css`,
+                `${assetPath}/node_modules/katex/dist/katex.min.css`,
                 `${assetPath}/stylesheets/print.css`,
                 `${assetPath}/stylesheets/relation_map.css`,
                 `${assetPath}/stylesheets/ckeditor-theme.css`
@@ -300,17 +300,17 @@ export default class NoteDetailWidget extends NoteContextAwareWidget {
             // FIXME: create a separate event to force hierarchical refresh
 
             // this uses handleEvent to make sure that the ordinary content updates are propagated only in the subtree
-            // to avoid problem in #3365
+            // to avoid the problem in #3365
             this.handleEvent('noteTypeMimeChanged', {noteId: this.noteId});
         }
         else if (loadResults.isNoteReloaded(this.noteId, this.componentId)
             && (this.type !== await this.getWidgetType() || this.mime !== this.note.mime)) {
 
-            // this needs to have a triggerEvent so that e.g. note type (not in the component subtree) is updated
+            // this needs to have a triggerEvent so that e.g., note type (not in the component subtree) is updated
             this.triggerEvent('noteTypeMimeChanged', {noteId: this.noteId});
         }
         else {
-            const attrs = loadResults.getAttributes();
+            const attrs = loadResults.getAttributeRows();
 
             const label = attrs.find(attr =>
                 attr.type === 'label'

@@ -1,21 +1,21 @@
 const path = require('path');
 const url = require("url");
-const port = require('./port');
-const optionService = require('./options');
-const env = require('./env');
-const log = require('./log');
-const sqlInit = require('./sql_init');
-const cls = require('./cls');
-const keyboardActionsService = require('./keyboard_actions');
+const port = require('./port.js');
+const optionService = require('./options.js');
+const env = require('./env.js');
+const log = require('./log.js');
+const sqlInit = require('./sql_init.js');
+const cls = require('./cls.js');
+const keyboardActionsService = require('./keyboard_actions.js');
 const {ipcMain} = require('electron');
 
-// Prevent window being garbage collected
+// Prevent the window being garbage collected
 /** @type {Electron.BrowserWindow} */
 let mainWindow;
 /** @type {Electron.BrowserWindow} */
 let setupWindow;
 
-async function createExtraWindow(notePath, hoistedNoteId = 'root') {
+async function createExtraWindow(extraWindowHash) {
     const spellcheckEnabled = optionService.getOptionBool('spellCheckEnabled');
 
     const {BrowserWindow} = require('electron');
@@ -35,20 +35,20 @@ async function createExtraWindow(notePath, hoistedNoteId = 'root') {
     });
 
     win.setMenuBarVisibility(false);
-    win.loadURL(`http://127.0.0.1:${port}/?extra=1&extraHoistedNoteId=${hoistedNoteId}#${notePath}`);
+    win.loadURL(`http://127.0.0.1:${port}/?extraWindow=1${extraWindowHash}`);
 
     configureWebContents(win.webContents, spellcheckEnabled);
 }
 
 ipcMain.on('create-extra-window', (event, arg) => {
-    createExtraWindow(arg.notePath, arg.hoistedNoteId);
+    createExtraWindow(arg.extraWindowHash);
 });
 
 async function createMainWindow(app) {
     const windowStateKeeper = require('electron-window-state'); // should not be statically imported
 
     const mainWindowState = windowStateKeeper({
-        // default window width & height, so it's usable on 1600 * 900 display (including some extra panels etc.)
+        // default window width & height, so it's usable on a 1600 * 900 display (including some extra panels etc.)
         defaultWidth: 1200,
         defaultHeight: 800
     });
@@ -98,11 +98,9 @@ async function createMainWindow(app) {
 function configureWebContents(webContents, spellcheckEnabled) {
     require("@electron/remote/main").enable(webContents);
 
-    webContents.on('new-window', (e, url) => {
-        if (url !== webContents.getURL()) {
-            e.preventDefault();
-            require('electron').shell.openExternal(url);
-        }
+    mainWindow.webContents.setWindowOpenHandler((details) => {
+        require("electron").shell.openExternal(details.url);
+        return { action: 'deny' }
     });
 
     // prevent drag & drop to navigate away from trilium

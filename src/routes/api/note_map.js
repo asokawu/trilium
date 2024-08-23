@@ -1,8 +1,8 @@
 "use strict";
 
-const becca = require("../../becca/becca");
+const becca = require('../../becca/becca.js');
 const { JSDOM } = require("jsdom");
-const NotFoundError = require("../../errors/not_found_error");
+
 function buildDescendantCountMap(noteIdsToCount) {
     if (!Array.isArray(noteIdsToCount)) {
         throw new Error('noteIdsToCount: type error');
@@ -57,7 +57,7 @@ function getNeighbors(note, depth) {
 
         const targetNote = relation.getTargetNote();
 
-        if (!targetNote || targetNote.hasLabel('excludeFromNoteMap')) {
+        if (!targetNote || targetNote.isLabelTruthy('excludeFromNoteMap')) {
             continue;
         }
 
@@ -76,7 +76,7 @@ function getNeighbors(note, depth) {
 
         const sourceNote = relation.getNote();
 
-        if (!sourceNote || sourceNote.hasLabel('excludeFromNoteMap')) {
+        if (!sourceNote || sourceNote.isLabelTruthy('excludeFromNoteMap')) {
             continue;
         }
 
@@ -92,13 +92,13 @@ function getNeighbors(note, depth) {
 
 function getLinkMap(req) {
     const mapRootNote = becca.getNote(req.params.noteId);
-    // if the map root itself has exclude attribute (journal typically) then there wouldn't be anything to display, so
-    // we'll just ignore it
-    const ignoreExcludeFromNoteMap = mapRootNote.hasLabel('excludeFromNoteMap');
+    // if the map root itself has "excludeFromNoteMap" attribute (journal typically) then there wouldn't be anything
+    // to display, so we'll just ignore it
+    const ignoreExcludeFromNoteMap = mapRootNote.isLabelTruthy('excludeFromNoteMap');
     let unfilteredNotes;
 
     if (mapRootNote.type === 'search') {
-        // for search notes we want to consider the direct search results only without the descendants
+        // for search notes, we want to consider the direct search results only without the descendants
         unfilteredNotes = mapRootNote.getSearchResultNotes();
     } else {
         unfilteredNotes = mapRootNote.getSubtree({
@@ -110,7 +110,7 @@ function getLinkMap(req) {
 
     const noteIds = new Set(
         unfilteredNotes
-            .filter(note => ignoreExcludeFromNoteMap || !note.hasLabel('excludeFromNoteMap'))
+            .filter(note => ignoreExcludeFromNoteMap || !note.isLabelTruthy('excludeFromNoteMap'))
             .map(note => note.noteId)
     );
 
@@ -167,9 +167,9 @@ function getLinkMap(req) {
 
 function getTreeMap(req) {
     const mapRootNote = becca.getNote(req.params.noteId);
-    // if the map root itself has ignore (journal typically) then there wouldn't be anything to display, so
-    // we'll just ignore it
-    const ignoreExcludeFromNoteMap = mapRootNote.hasLabel('excludeFromNoteMap');
+    // if the map root itself has "excludeFromNoteMap" (journal typically) then there wouldn't be anything to display,
+    // so we'll just ignore it
+    const ignoreExcludeFromNoteMap = mapRootNote.isLabelTruthy('excludeFromNoteMap');
     const subtree = mapRootNote.getSubtree({
         includeArchived: false,
         resolveSearch: true,
@@ -177,7 +177,7 @@ function getTreeMap(req) {
     });
 
     const notes = subtree.notes
-        .filter(note => ignoreExcludeFromNoteMap || !note.hasLabel('excludeFromNoteMap'))
+        .filter(note => ignoreExcludeFromNoteMap || !note.isLabelTruthy('excludeFromNoteMap'))
         .filter(note => {
             if (note.type !== 'image' || note.getChildNotes().length > 0) {
                 return true;
@@ -345,25 +345,16 @@ function getFilteredBacklinks(note) {
 function getBacklinkCount(req) {
     const {noteId} = req.params;
 
-    const note = becca.getNote(noteId);
+    const note = becca.getNoteOrThrow(noteId);
 
-    if (!note) {
-        throw new NotFoundError(`Note '${noteId}' not found`);
-    }
-    else {
-        return {
-            count: getFilteredBacklinks(note).length
-        };
-    }
+    return {
+        count: getFilteredBacklinks(note).length
+    };
 }
 
 function getBacklinks(req) {
     const {noteId} = req.params;
-    const note = becca.getNote(noteId);
-
-    if (!note) {
-        throw new NotFoundError(`Note '${noteId}' was not found`);
-    }
+    const note = becca.getNoteOrThrow(noteId);
 
     let backlinksWithExcerptCount = 0;
 

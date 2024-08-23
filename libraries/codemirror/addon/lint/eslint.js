@@ -29,8 +29,8 @@
 
     async function validatorJavaScript(text, options) {
         if (glob.isMobile()
-            || glob.getActiveTabNote() == null
-            || glob.getActiveTabNote().mime === 'application/json') {
+            || glob.getActiveContextNote() == null
+            || glob.getActiveContextNote().mime === 'application/json') {
             // eslint doesn't seem to validate pure JSON well
             return [];
         }
@@ -46,7 +46,7 @@
         const errors = new eslint().verify(text, {
             root: true,
             parserOptions: {
-                ecmaVersion: 2022
+                ecmaVersion: "latest"
             },
             extends: ['eslint:recommended', 'airbnb-base'],
             env: {

@@ -1,12 +1,11 @@
 "use strict";
 
-const sql = require('../../services/sql');
-const log = require('../../services/log');
-const attributeService = require('../../services/attributes');
-const BAttribute = require('../../becca/entities/battribute');
-const becca = require("../../becca/becca");
-const ValidationError = require("../../errors/validation_error");
-const NotFoundError = require("../../errors/not_found_error");
+const sql = require('../../services/sql.js');
+const log = require('../../services/log.js');
+const attributeService = require('../../services/attributes.js');
+const BAttribute = require('../../becca/entities/battribute.js');
+const becca = require('../../becca/becca.js');
+const ValidationError = require('../../errors/validation_error.js');
 
 function getEffectiveNoteAttributes(req) {
     const note = becca.getNote(req.params.noteId);
@@ -20,11 +19,7 @@ function updateNoteAttribute(req) {
 
     let attribute;
     if (body.attributeId) {
-        attribute = becca.getAttribute(body.attributeId);
-
-        if (!attribute) {
-            throw new NotFoundError(`Attribute '${body.attributeId}' does not exist.`);
-        }
+        attribute = becca.getAttributeOrThrow(body.attributeId);
 
         if (attribute.noteId !== noteId) {
             throw new ValidationError(`Attribute '${body.attributeId}' is not owned by ${noteId}`);
@@ -121,7 +116,7 @@ function updateNoteAttributes(req) {
 
     const note = becca.getNote(noteId);
 
-    let existingAttrs = note.getOwnedAttributes();
+    let existingAttrs = note.getOwnedAttributes().slice();
 
     let position = 0;
 

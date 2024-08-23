@@ -1,21 +1,25 @@
 "use strict";
 
-const sql = require('./sql');
-const sqlInit = require('./sql_init');
-const log = require('./log');
-const ws = require('./ws');
-const syncMutexService = require('./sync_mutex');
-const cls = require('./cls');
-const entityChangesService = require('./entity_changes');
-const optionsService = require('./options');
-const BBranch = require('../becca/entities/bbranch');
-const noteRevisionService = require('./note_revisions');
-const becca = require("../becca/becca");
-const utils = require("../services/utils");
-const {sanitizeAttributeName} = require("./sanitize_attribute_name");
-const noteTypes = require("../services/note_types").getNoteTypeNames();
+const sql = require('./sql.js');
+const sqlInit = require('./sql_init.js');
+const log = require('./log.js');
+const ws = require('./ws.js');
+const syncMutexService = require('./sync_mutex.js');
+const cls = require('./cls.js');
+const entityChangesService = require('./entity_changes.js');
+const optionsService = require('./options.js');
+const BBranch = require('../becca/entities/bbranch.js');
+const revisionService = require('./revisions.js');
+const becca = require('../becca/becca.js');
+const utils = require('../services/utils.js');
+const eraseService = require('../services/erase.js');
+const {sanitizeAttributeName} = require('./sanitize_attribute_name.js');
+const noteTypes = require('../services/note_types.js').getNoteTypeNames();
 
 class ConsistencyChecks {
+    /**
+     * @param autoFix - automatically fix all encountered problems. False is only for debugging during development (fail fast)
+     */
     constructor(autoFix) {
         this.autoFix = autoFix;
         this.unrecoveredConsistencyErrors = false;
@@ -153,7 +157,7 @@ class ConsistencyChecks {
                     const noteId = oldBranch.noteId;
                     oldBranch.markAsDeleted("missing-parent");
 
-                    let message = `Branch '${branchId}' was was missing parent note '${parentNoteId}', so it was deleted. `;
+                    let message = `Branch '${branchId}' was missing parent note '${parentNoteId}', so it was deleted. `;
 
                     if (becca.getNote(noteId).getParentBranches().length === 0) {
                         const newBranch = new BBranch({
@@ -213,14 +217,36 @@ class ConsistencyChecks {
                     logError(`Relation '${attributeId}' references missing note '${noteId}'`)
                 }
             });
+
+        this.findAndFixIssues(`
+                    SELECT attachmentId, attachments.ownerId AS noteId
+                    FROM attachments
+                    WHERE attachments.ownerId NOT IN (
+                            SELECT noteId FROM notes
+                            UNION ALL
+                            SELECT revisionId FROM revisions
+                        )
+                      AND attachments.isDeleted = 0`,
+            ({attachmentId, ownerId}) => {
+                if (this.autoFix) {
+                    const attachment = becca.getAttachment(attachmentId);
+                    attachment.markAsDeleted();
+
+                    this.reloadNeeded = false;
+
+                    logFix(`Attachment '${attachmentId}' has been deleted since it references missing note/revision '${ownerId}'`);
+                } else {
+                    logError(`Attachment '${attachmentId}' references missing note/revision '${ownerId}'`);
+                }
+            });
     }
 
     findExistencyIssues() {
-        // principle for fixing inconsistencies is that if the note itself is deleted (isDeleted=true) then all related
-        // entities should be also deleted (branches, attributes), but if note is not deleted,
+        // the principle for fixing inconsistencies is that if the note itself is deleted (isDeleted=true) then all related
+        // entities should be also deleted (branches, attributes), but if the note is not deleted,
         // then at least one branch should exist.
 
-        // the order here is important - first we might need to delete inconsistent branches and after that
+        // the order here is important - first we might need to delete inconsistent branches, and after that
         // another check might create missing branch
         this.findAndFixIssues(`
                     SELECT branchId,
@@ -236,9 +262,9 @@ class ConsistencyChecks {
 
                     this.reloadNeeded = true;
 
-                    logFix(`Branch '${branchId}' has been deleted since associated note '${noteId}' is deleted.`);
+                    logFix(`Branch '${branchId}' has been deleted since the associated note '${noteId}' is deleted.`);
                 } else {
-                    logError(`Branch '${branchId}' is not deleted even though associated note '${noteId}' is deleted.`)
+                    logError(`Branch '${branchId}' is not deleted even though the associated note '${noteId}' is deleted.`)
                 }
             });
 
@@ -256,9 +282,9 @@ class ConsistencyChecks {
 
                 this.reloadNeeded = true;
 
-                logFix(`Branch '${branchId}' has been deleted since associated parent note '${parentNoteId}' is deleted.`);
+                logFix(`Branch '${branchId}' has been deleted since the associated parent note '${parentNoteId}' is deleted.`);
             } else {
-                logError(`Branch '${branchId}' is not deleted even though associated parent note '${parentNoteId}' is deleted.`)
+                logError(`Branch '${branchId}' is not deleted even though the associated parent note '${parentNoteId}' is deleted.`)
             }
         });
 
@@ -320,6 +346,26 @@ class ConsistencyChecks {
                     logError(`Duplicate branches for note '${noteId}' and parent '${parentNoteId}'`);
                 }
             });
+
+        this.findAndFixIssues(`
+                    SELECT attachmentId,
+                           attachments.ownerId AS noteId
+                    FROM attachments
+                      JOIN notes ON notes.noteId = attachments.ownerId
+                    WHERE notes.isDeleted = 1
+                      AND attachments.isDeleted = 0`,
+            ({attachmentId, noteId}) => {
+                if (this.autoFix) {
+                    const attachment = becca.getAttachment(attachmentId);
+                    attachment.markAsDeleted();
+
+                    this.reloadNeeded = false;
+
+                    logFix(`Attachment '${attachmentId}' has been deleted since the associated note '${noteId}' is deleted.`);
+                } else {
+                    logError(`Attachment '${attachmentId}' is not deleted even though the associated note '${noteId}' is deleted.`)
+                }
+            });
     }
 
     findLogicIssues() {
@@ -333,7 +379,7 @@ class ConsistencyChecks {
             ({noteId, type}) => {
                 if (this.autoFix) {
                     const note = becca.getNote(noteId);
-                    note.type = 'file'; // file is a safe option to recover notes if type is not known
+                    note.type = 'file'; // file is a safe option to recover notes if the type is not known
                     note.save();
 
                     this.reloadNeeded = true;
@@ -347,33 +393,42 @@ class ConsistencyChecks {
         this.findAndFixIssues(`
                     SELECT notes.noteId, notes.isProtected, notes.type, notes.mime
                     FROM notes
-                      LEFT JOIN note_contents USING (noteId)
-                    WHERE note_contents.noteId IS NULL`,
+                      LEFT JOIN blobs USING (blobId)
+                    WHERE blobs.blobId IS NULL
+                        AND notes.isDeleted = 0`,
             ({noteId, isProtected, type, mime}) => {
                 if (this.autoFix) {
-                    // it might be possible that the note_content is not available only because of the interrupted
+                    // it might be possible that the blob is not available only because of the interrupted
                     // sync, and it will come later. It's therefore important to guarantee that this artificial
                     // record won't overwrite the real one coming from the sync.
                     const fakeDate = "2000-01-01 00:00:00Z";
 
-                    // manually creating row since this can also affect deleted notes
-                    sql.upsert("note_contents", "noteId", {
-                        noteId: noteId,
-                        content: getBlankContent(isProtected, type, mime),
-                        utcDateModified: fakeDate,
-                        dateModified: fakeDate
-                    });
+                    const blankContent = getBlankContent(isProtected, type, mime);
+                    const blobId = utils.hashedBlobId(blankContent);
+                    const blobAlreadyExists = !!sql.getValue("SELECT 1 FROM blobs WHERE blobId = ?", [blobId]);
 
-                    const hash = utils.hash(utils.randomString(10));
+                    if (!blobAlreadyExists) {
+                        // manually creating row since this can also affect deleted notes
+                        sql.upsert("blobs", "blobId", {
+                            noteId: noteId,
+                            content: blankContent,
+                            utcDateModified: fakeDate,
+                            dateModified: fakeDate
+                        });
 
-                    entityChangesService.addEntityChange({
-                        entityName: 'note_contents',
-                        entityId: noteId,
-                        hash: hash,
-                        isErased: false,
-                        utcDateChanged: fakeDate,
-                        isSynced: true
-                    });
+                        const hash = utils.hash(utils.randomString(10));
+
+                        entityChangesService.putEntityChange({
+                            entityName: 'blobs',
+                            entityId: blobId,
+                            hash: hash,
+                            isErased: false,
+                            utcDateChanged: fakeDate,
+                            isSynced: true
+                        });
+                    }
+
+                    sql.execute("UPDATE notes SET blobId = ? WHERE noteId = ?", [blobId, noteId]);
 
                     this.reloadNeeded = true;
 
@@ -389,7 +444,7 @@ class ConsistencyChecks {
             this.findAndFixIssues(`
                         SELECT notes.noteId, notes.type, notes.mime
                         FROM notes
-                                 JOIN note_contents USING (noteId)
+                          JOIN blobs USING (blobId)
                         WHERE isDeleted = 0
                           AND isProtected = 0
                           AND content IS NULL`,
@@ -409,19 +464,36 @@ class ConsistencyChecks {
         }
 
         this.findAndFixIssues(`
-                    SELECT note_revisions.noteRevisionId
-                    FROM note_revisions
-                      LEFT JOIN note_revision_contents USING (noteRevisionId)
-                    WHERE note_revision_contents.noteRevisionId IS NULL`,
-            ({noteRevisionId}) => {
+                    SELECT revisions.revisionId, blobs.blobId
+                    FROM revisions
+                      LEFT JOIN blobs USING (blobId)
+                    WHERE blobs.blobId IS NULL`,
+            ({revisionId, blobId}) => {
                 if (this.autoFix) {
-                    noteRevisionService.eraseNoteRevisions([noteRevisionId]);
+                    eraseService.eraseRevisions([revisionId]);
 
                     this.reloadNeeded = true;
 
-                    logFix(`Note revision content '${noteRevisionId}' was set to erased since it did not exist.`);
+                    logFix(`Note revision '${revisionId}' was erased since the referenced blob '${blobId}' did not exist.`);
                 } else {
-                    logError(`Note revision content '${noteRevisionId}' does not exist`);
+                    logError(`Note revision '${revisionId}' blob '${blobId}' does not exist`);
+                }
+            });
+
+        this.findAndFixIssues(`
+                    SELECT attachments.attachmentId, blobs.blobId
+                    FROM attachments
+                      LEFT JOIN blobs USING (blobId)
+                    WHERE blobs.blobId IS NULL`,
+            ({attachmentId, blobId}) => {
+                if (this.autoFix) {
+                    eraseService.eraseAttachments([attachmentId]);
+
+                    this.reloadNeeded = true;
+
+                    logFix(`Attachment '${attachmentId}' was erased since the referenced blob '${blobId}' did not exist.`);
+                } else {
+                    logError(`Attachment '${attachmentId}' blob '${blobId}' does not exist`);
                 }
             });
 
@@ -546,25 +618,21 @@ class ConsistencyChecks {
 
     runEntityChangeChecks(entityName, key) {
         this.findAndFixIssues(`
-            SELECT
-              ${key} as entityId
-            FROM
-              ${entityName} 
-              LEFT JOIN entity_changes ON entity_changes.entityName = '${entityName}' 
-                                      AND entity_changes.entityId = ${key} 
-            WHERE 
-              entity_changes.id IS NULL`,
+            SELECT ${key} as entityId
+            FROM ${entityName}
+            LEFT JOIN entity_changes ec ON ec.entityName = '${entityName}' AND ec.entityId = ${entityName}.${key} 
+            WHERE ec.id IS NULL`,
             ({entityId}) => {
-                const entity = sql.getRow(`SELECT * FROM ${entityName} WHERE ${key} = ?`, [entityId]);
+                const entityRow = sql.getRow(`SELECT * FROM ${entityName} WHERE ${key} = ?`, [entityId]);
 
                 if (this.autoFix) {
-                    entityChangesService.addEntityChange({
+                    entityChangesService.putEntityChange({
                         entityName,
                         entityId,
-                        hash: utils.randomString(10), // doesn't matter, will force sync but that's OK
-                        isErased: !!entity.isErased,
-                        utcDateChanged: entity.utcDateModified || entity.utcDateCreated,
-                        isSynced: entityName !== 'options' || entity.isSynced
+                        hash: utils.randomString(10), // doesn't matter, will force sync, but that's OK
+                        isErased: false,
+                        utcDateChanged: entityRow.utcDateModified || entityRow.utcDateCreated,
+                        isSynced: entityName !== 'options' || entityRow.isSynced
                     });
 
                     logFix(`Created missing entity change for entityName '${entityName}', entityId '${entityId}'`);
@@ -574,15 +642,13 @@ class ConsistencyChecks {
             });
 
         this.findAndFixIssues(`
-            SELECT 
-              id, entityId
-            FROM 
-              entity_changes 
-              LEFT JOIN ${entityName} ON entityId = ${key} 
+            SELECT id, entityId
+            FROM entity_changes 
+            LEFT JOIN ${entityName} ON entityId = ${entityName}.${key} 
             WHERE
               entity_changes.isErased = 0
               AND entity_changes.entityName = '${entityName}' 
-              AND ${key} IS NULL`,
+              AND ${entityName}.${key} IS NULL`,
                 ({id, entityId}) => {
                     if (this.autoFix) {
                         sql.execute("DELETE FROM entity_changes WHERE entityName = ? AND entityId = ?", [entityName, entityId]);
@@ -594,11 +660,9 @@ class ConsistencyChecks {
                 });
 
         this.findAndFixIssues(`
-            SELECT 
-              id, entityId
-            FROM 
-              entity_changes 
-              JOIN ${entityName} ON entityId = ${key} 
+            SELECT id, entityId
+            FROM entity_changes 
+            JOIN ${entityName} ON entityId = ${entityName}.${key} 
             WHERE
               entity_changes.isErased = 1
               AND entity_changes.entityName = '${entityName}'`,
@@ -617,9 +681,9 @@ class ConsistencyChecks {
 
     findEntityChangeIssues() {
         this.runEntityChangeChecks("notes", "noteId");
-        this.runEntityChangeChecks("note_contents", "noteId");
-        this.runEntityChangeChecks("note_revisions", "noteRevisionId");
-        this.runEntityChangeChecks("note_revision_contents", "noteRevisionId");
+        this.runEntityChangeChecks("revisions", "revisionId");
+        this.runEntityChangeChecks("attachments", "attachmentId");
+        this.runEntityChangeChecks("blobs", "blobId");
         this.runEntityChangeChecks("branches", "branchId");
         this.runEntityChangeChecks("attributes", "attributeId");
         this.runEntityChangeChecks("etapi_tokens", "etapiTokenId");
@@ -638,7 +702,7 @@ class ConsistencyChecks {
                     // - just SQL query will fix it in DB but not notify frontend (or other caches) that it has been fixed
                     // - renaming the attribute would break the invariant that single attribute never changes the name
                     // - deleting the old attribute and creating new will create duplicates across synchronized cluster (specifically in the initial migration)
-                    // But in general we assume there won't be many such problems
+                    // But in general, we assume there won't be many such problems
                     sql.execute('UPDATE attributes SET name = ? WHERE name = ?', [fixedName, origName]);
 
                     this.fixedIssues = true;
@@ -702,7 +766,7 @@ class ConsistencyChecks {
         }
 
         if (this.reloadNeeded) {
-            require("../becca/becca_loader").reload();
+            require('../becca/becca_loader.js').reload("consistency checks need becca reload");
         }
 
         return !this.unrecoveredConsistencyErrors;
@@ -715,7 +779,7 @@ class ConsistencyChecks {
             return `${tableName}: ${count}`;
         }
 
-        const tables = [ "notes", "note_revisions", "branches", "attributes", "etapi_tokens" ];
+        const tables = [ "notes", "revisions", "attachments", "branches", "attributes", "etapi_tokens", "blobs" ];
 
         log.info(`Table counts: ${tables.map(tableName => getTableRowCount(tableName)).join(", ")}`);
     }
@@ -724,7 +788,13 @@ class ConsistencyChecks {
         let elapsedTimeMs;
 
         await syncMutexService.doExclusively(() => {
-            elapsedTimeMs = this.runChecksInner();
+            const startTimeMs = Date.now();
+
+            this.runDbDiagnostics();
+
+            this.runAllChecksAndFixers();
+
+            elapsedTimeMs = Date.now() - startTimeMs;
         });
 
         if (this.unrecoveredConsistencyErrors) {
@@ -738,28 +808,18 @@ class ConsistencyChecks {
             );
         }
     }
-
-    runChecksInner() {
-        const startTimeMs = Date.now();
-
-        this.runDbDiagnostics();
-
-        this.runAllChecksAndFixers();
-
-        return Date.now() - startTimeMs;
-    }
 }
 
 function getBlankContent(isProtected, type, mime) {
     if (isProtected) {
-        return null; // this is wrong for protected non-erased notes, but we cannot create a valid value without password
+        return null; // this is wrong for protected non-erased notes, but we cannot create a valid value without a password
     }
 
     if (mime === 'application/json') {
         return '{}';
     }
 
-    return ''; // empty string might be wrong choice for some note types, but it's the best guess
+    return ''; // empty string might be a wrong choice for some note types, but it's the best guess
 }
 
 function logFix(message) {
@@ -782,11 +842,6 @@ async function runOnDemandChecks(autoFix) {
     await consistencyChecks.runChecks();
 }
 
-function runOnDemandChecksWithoutExclusiveLock(autoFix) {
-    const consistencyChecks = new ConsistencyChecks(autoFix);
-    consistencyChecks.runChecksInner();
-}
-
 function runEntityChangesChecks() {
     const consistencyChecks = new ConsistencyChecks(true);
     consistencyChecks.findEntityChangeIssues();
@@ -801,6 +856,5 @@ sqlInit.dbReady.then(() => {
 
 module.exports = {
     runOnDemandChecks,
-    runOnDemandChecksWithoutExclusiveLock,
     runEntityChangesChecks
 };

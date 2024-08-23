@@ -1,8 +1,6 @@
 import utils from './utils.js';
 import ValidationError from "./validation_error.js";
 
-const REQUEST_LOGGING_ENABLED = false;
-
 async function getHeaders(headers) {
     const appContext = (await import('../components/app_context.js')).default;
     const activeNoteContext = appContext.tabManager ? appContext.tabManager.getActiveContext() : null;
@@ -30,68 +28,80 @@ async function getHeaders(headers) {
     return allHeaders;
 }
 
+async function getWithSilentNotFound(url, componentId) {
+    return await call('GET', url, componentId, { silentNotFound: true });
+}
+
 async function get(url, componentId) {
-    return await call('GET', url, null, {'trilium-component-id': componentId});
+    return await call('GET', url, componentId);
 }
 
 async function post(url, data, componentId) {
-    return await call('POST', url, data, {'trilium-component-id': componentId});
+    return await call('POST', url, componentId, { data });
 }
 
 async function put(url, data, componentId) {
-    return await call('PUT', url, data, {'trilium-component-id': componentId});
+    return await call('PUT', url, componentId, { data });
 }
 
 async function patch(url, data, componentId) {
-    return await call('PATCH', url, data, {'trilium-component-id': componentId});
+    return await call('PATCH', url, componentId, { data });
 }
 
 async function remove(url, componentId) {
-    return await call('DELETE', url, null, {'trilium-component-id': componentId});
+    return await call('DELETE', url, componentId);
 }
 
-let i = 1;
-const reqResolves = {};
-const reqRejects = {};
+async function upload(url, fileToUpload) {
+    const formData = new FormData();
+    formData.append('upload', fileToUpload);
+
+    return await $.ajax({
+        url: window.glob.baseApiUrl + url,
+        headers: await getHeaders(),
+        data: formData,
+        type: 'PUT',
+        timeout: 60 * 60 * 1000,
+        contentType: false, // NEEDED, DON'T REMOVE THIS
+        processData: false, // NEEDED, DON'T REMOVE THIS
+    });
+}
+
+let idCounter = 1;
+const idToRequestMap = {};
 
 let maxKnownEntityChangeId = 0;
 
-async function call(method, url, data, headers = {}) {
+async function call(method, url, componentId, options = {}) {
     let resp;
 
-    const start = Date.now();
-
-    headers = await getHeaders(headers);
+    const headers = await getHeaders({
+        'trilium-component-id': componentId
+    });
+    const {data} = options;
 
     if (utils.isElectron()) {
         const ipc = utils.dynamicRequire('electron').ipcRenderer;
-        const requestId = i++;
+        const requestId = idCounter++;
 
         resp = await new Promise((resolve, reject) => {
-            reqResolves[requestId] = resolve;
-            reqRejects[requestId] = reject;
-
-            if (REQUEST_LOGGING_ENABLED) {
-                console.log(utils.now(), `Request #${requestId} to ${method} ${url}`);
-            }
+            idToRequestMap[requestId] = {
+                resolve,
+                reject,
+                silentNotFound: !!options.silentNotFound
+            };
 
             ipc.send('server-request', {
                 requestId: requestId,
                 headers: headers,
                 method: method,
-                url: `/${baseApiUrl}${url}`,
+                url: `/${window.glob.baseApiUrl}${url}`,
                 data: data
             });
         });
     }
     else {
-        resp = await ajax(url, method, data, headers);
-    }
-
-    const end = Date.now();
-
-    if (glob.PROFILING_LOG) {
-        console.log(`${method} ${url} took ${end - start}ms`);
+        resp = await ajax(url, method, data, headers, !!options.silentNotFound);
     }
 
     const maxEntityChangeIdStr = resp.headers['trilium-max-entity-change-id'];
@@ -103,32 +113,10 @@ async function call(method, url, data, headers = {}) {
     return resp.body;
 }
 
-async function reportError(method, url, statusCode, response) {
-    const toastService = (await import("./toast.js")).default;
-    let message = response;
-
-    if (typeof response === 'string') {
-        try {
-            response = JSON.parse(response);
-            message = response.message;
-        }
-        catch (e) {}
-    }
-
-    if ([400, 404].includes(statusCode) && response && typeof response === 'object') {
-        toastService.showError(message);
-        throw new ValidationError(response);
-    } else {
-        const title = `${statusCode} ${method} ${url}`;
-        toastService.showErrorTitleAndMessage(title, message);
-        toastService.throwError(`${title} - ${message}`);
-    }
-}
-
-function ajax(url, method, data, headers) {
+function ajax(url, method, data, headers, silentNotFound) {
     return new Promise((res, rej) => {
         const options = {
-            url: baseApiUrl + url,
+            url: window.glob.baseApiUrl + url,
             type: method,
             headers: headers,
             timeout: 60000,
@@ -147,7 +135,11 @@ function ajax(url, method, data, headers) {
                 });
             },
             error: async jqXhr => {
-                await reportError(method, url, jqXhr.status, jqXhr.responseText);
+                if (silentNotFound && jqXhr.status === 404) {
+                    // report nothing
+                } else {
+                    await reportError(method, url, jqXhr.status, jqXhr.responseText);
+                }
 
                 rej(jqXhr.responseText);
             }
@@ -170,43 +162,75 @@ if (utils.isElectron()) {
     const ipc = utils.dynamicRequire('electron').ipcRenderer;
 
     ipc.on('server-response', async (event, arg) => {
-        if (REQUEST_LOGGING_ENABLED) {
-            console.log(utils.now(), `Response #${arg.requestId}: ${arg.statusCode}`);
-        }
-
         if (arg.statusCode >= 200 && arg.statusCode < 300) {
-            if (arg.headers['Content-Type'] === 'application/json') {
-                arg.body = JSON.parse(arg.body);
-            }
-
-            if (!(arg.requestId in reqResolves)) {
-                // this can happen when reload happens between firing up the request and receiving the response
-                throw new Error(`Unknown requestId="${arg.requestId}"`);
-            }
-
-            reqResolves[arg.requestId]({
-                body: arg.body,
-                headers: arg.headers
-            });
+            handleSuccessfulResponse(arg);
         }
         else {
-            await reportError(arg.method, arg.url, arg.statusCode, arg.body);
+            if (arg.statusCode === 404 && idToRequestMap[arg.requestId]?.silentNotFound) {
+                // report nothing
+            } else {
+                await reportError(arg.method, arg.url, arg.statusCode, arg.body);
+            }
 
-            reqRejects[arg.requestId]();
+            idToRequestMap[arg.requestId].reject(new Error(`Server responded with ${arg.statusCode}`));
         }
 
-        delete reqResolves[arg.requestId];
-        delete reqRejects[arg.requestId];
+        delete idToRequestMap[arg.requestId];
     });
+
+    function handleSuccessfulResponse(arg) {
+        if (arg.headers['Content-Type'] === 'application/json') {
+            arg.body = JSON.parse(arg.body);
+        }
+
+        if (!(arg.requestId in idToRequestMap)) {
+            // this can happen when reload happens between firing up the request and receiving the response
+            throw new Error(`Unknown requestId '${arg.requestId}'`);
+        }
+
+        idToRequestMap[arg.requestId].resolve({
+            body: arg.body,
+            headers: arg.headers
+        });
+    }
+}
+
+async function reportError(method, url, statusCode, response) {
+    let message = response;
+
+    if (typeof response === 'string') {
+        try {
+            response = JSON.parse(response);
+            message = response.message;
+        }
+        catch (e) {}
+    }
+
+    const toastService = (await import("./toast.js")).default;
+
+    if ([400, 404].includes(statusCode) && response && typeof response === 'object') {
+        toastService.showError(message);
+        throw new ValidationError({
+            requestUrl: url,
+            method,
+            statusCode,
+            ...response
+        });
+    } else {
+        const title = `${statusCode} ${method} ${url}`;
+        toastService.showErrorTitleAndMessage(title, message);
+        toastService.throwError(`${title} - ${message}`);
+    }
 }
 
 export default {
     get,
+    getWithSilentNotFound,
     post,
     put,
     patch,
     remove,
-    ajax,
+    upload,
     // don't remove, used from CKEditor image upload!
     getHeaders,
     getMaxKnownEntityChangeId: () => maxKnownEntityChangeId

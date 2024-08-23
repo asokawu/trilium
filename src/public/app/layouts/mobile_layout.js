@@ -21,6 +21,8 @@ import NoteListWidget from "../widgets/note_list.js";
 import GlobalMenuWidget from "../widgets/buttons/global_menu.js";
 import LauncherContainer from "../widgets/containers/launcher_container.js";
 import RootContainer from "../widgets/containers/root_container.js";
+import SharedInfoWidget from "../widgets/shared_info.js";
+import PromotedAttributesWidget from "../widgets/ribbon_widgets/promoted_attributes.js";
 
 const MOBILE_CSS = `
 <style>
@@ -144,6 +146,7 @@ export default class MobileLayout {
                             .css("top: 5px;")
                         )
                         .child(new CloseDetailButtonWidget().contentSized()))
+                    .child(new SharedInfoWidget())
                     .child(new FloatingButtons()
                         .child(new EditButton())
                         .child(new RelationMapButtons())
@@ -152,6 +155,7 @@ export default class MobileLayout {
                         .child(new HideFloatingButtonsButton())
                     )
                     .child(new MermaidWidget())
+                    .child(new PromotedAttributesWidget())
                     .child(
                         new ScrollingContainer()
                             .filling()

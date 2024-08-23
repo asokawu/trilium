@@ -1,6 +1,6 @@
 "use strict";
 
-const AbstractShacaEntity = require('./abstract_shaca_entity');
+const AbstractShacaEntity = require('./abstract_shaca_entity.js');
 
 class SAttribute extends AbstractShacaEntity {
     constructor([attributeId, noteId, type, name, value, isInheritable, position]) {
@@ -69,7 +69,7 @@ class SAttribute extends AbstractShacaEntity {
         return this.type === 'relation' && ['internalLink', 'imageLink', 'relationMapLink', 'includeNoteLink'].includes(this.name);
     }
 
-    /** @returns {SNote|null} */
+    /** @returns {SNote} */
     get note() {
         return this.shaca.notes[this.noteId];
     }
@@ -89,7 +89,7 @@ class SAttribute extends AbstractShacaEntity {
     /** @returns {SNote|null} */
     getTargetNote() {
         if (this.type !== 'relation') {
-            throw new Error(`Attribute ${this.attributeId} is not relation`);
+            throw new Error(`Attribute '${this.attributeId}' is not relation`);
         }
 
         if (!this.value) {

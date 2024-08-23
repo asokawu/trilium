@@ -1,4 +1,5 @@
-const becca = require("../../becca/becca");
+const becca = require('../../becca/becca.js');
+const markdownService = require('../../services/import/markdown.js');
 
 function getIconUsage() {
     const iconClassToCountMap = {};
@@ -24,6 +25,15 @@ function getIconUsage() {
     return { iconClassToCountMap };
 }
 
+function renderMarkdown(req) {
+    const { markdownContent } = req.body;
+
+    return {
+        htmlContent: markdownService.renderToHtml(markdownContent, '')
+    };
+}
+
 module.exports = {
-    getIconUsage
+    getIconUsage,
+    renderMarkdown
 };

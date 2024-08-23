@@ -1,5 +1,5 @@
-const cls = require("./cls");
-const becca = require("../becca/becca");
+const cls = require('./cls.js');
+const becca = require('../becca/becca.js');
 
 function getHoistedNoteId() {
     return cls.getHoistedNoteId();
@@ -17,18 +17,14 @@ function isHoistedInHiddenSubtree() {
     const hoistedNote = becca.getNote(hoistedNoteId);
 
     if (!hoistedNote) {
-        throw new Error(`Cannot find hoisted note ${hoistedNoteId}`);
+        throw new Error(`Cannot find hoisted note '${hoistedNoteId}'`);
     }
 
     return hoistedNote.isHiddenCompletely();
 }
 
-function getHoistedNote() {
-    return becca.getNote(cls.getHoistedNoteId());
-}
-
 function getWorkspaceNote() {
-    const hoistedNote = getHoistedNote();
+    const hoistedNote = becca.getNote(cls.getHoistedNoteId());
 
     if (hoistedNote.isRoot() || hoistedNote.hasLabel('workspace')) {
         return hoistedNote;
@@ -39,7 +35,6 @@ function getWorkspaceNote() {
 
 module.exports = {
     getHoistedNoteId,
-    getHoistedNote,
     getWorkspaceNote,
     isHoistedInHiddenSubtree
 };

@@ -88,7 +88,7 @@ const TPL = `
         display: none;
         border-bottom: 1px solid var(--main-border-color);
         margin-left: 10px;
-        margin-right: 10px;
+        margin-right: 5px; /* needs to have this value so that the bottom border is the same width as the top one */
     }
     
     .ribbon-body.active {
@@ -341,12 +341,12 @@ export default class RibbonContainer extends NoteContextAwareWidget {
     entitiesReloadedEvent({loadResults}) {
         if (loadResults.isNoteReloaded(this.noteId) && this.lastNoteType !== this.note.type) {
             // note type influences the list of available ribbon tabs the most
-            // check for type is so that we don't update on each title rename
+            // check for the type is so that we don't update on each title rename
             this.lastNoteType = this.note.type;
 
             this.refresh();
         }
-        else if (loadResults.getAttributes(this.componentId).find(attr => attributeService.isAffecting(attr, this.note))) {
+        else if (loadResults.getAttributeRows(this.componentId).find(attr => attributeService.isAffecting(attr, this.note))) {
             this.refreshWithNote(this.note, true);
         }
     }

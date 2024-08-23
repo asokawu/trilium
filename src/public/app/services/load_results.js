@@ -12,20 +12,22 @@ export default class LoadResults {
         this.noteIdToComponentId = {};
         this.componentIdToNoteIds = {};
 
-        this.branches = [];
+        this.branchRows = [];
 
-        this.attributes = [];
+        this.attributeRows = [];
 
         this.noteReorderings = [];
 
-        this.noteRevisions = [];
+        this.revisionRows = [];
 
         this.contentNoteIdToComponentId = [];
 
-        this.options = [];
+        this.optionNames = [];
+
+        this.attachmentRows = [];
     }
 
-    getEntity(entityName, entityId) {
+    getEntityRow(entityName, entityId) {
         return this.entities[entityName]?.[entityId];
     }
 
@@ -44,12 +46,12 @@ export default class LoadResults {
     }
 
     addBranch(branchId, componentId) {
-        this.branches.push({branchId, componentId});
+        this.branchRows.push({branchId, componentId});
     }
 
-    getBranches() {
-        return this.branches
-            .map(row => this.getEntity("branches", row.branchId))
+    getBranchRows() {
+        return this.branchRows
+            .map(row => this.getEntityRow("branches", row.branchId))
             .filter(branch => !!branch);
     }
 
@@ -62,23 +64,22 @@ export default class LoadResults {
     }
 
     addAttribute(attributeId, componentId) {
-        this.attributes.push({attributeId, componentId});
+        this.attributeRows.push({attributeId, componentId});
     }
 
-    /** @returns {FAttribute[]} */
-    getAttributes(componentId = 'none') {
-        return this.attributes
+    getAttributeRows(componentId = 'none') {
+        return this.attributeRows
             .filter(row => row.componentId !== componentId)
-            .map(row => this.getEntity("attributes", row.attributeId))
+            .map(row => this.getEntityRow("attributes", row.attributeId))
             .filter(attr => !!attr);
     }
 
-    addNoteRevision(noteRevisionId, noteId, componentId) {
-        this.noteRevisions.push({noteRevisionId, noteId, componentId});
+    addRevision(revisionId, noteId, componentId) {
+        this.revisionRows.push({revisionId, noteId, componentId});
     }
 
-    hasNoteRevisionForNote(noteId) {
-        return !!this.noteRevisions.find(nr => nr.noteId === noteId);
+    hasRevisionForNote(noteId) {
+        return !!this.revisionRows.find(row => row.noteId === noteId);
     }
 
     getNoteIds() {
@@ -107,11 +108,23 @@ export default class LoadResults {
     }
 
     addOption(name) {
-        this.options.push(name);
+        this.optionNames.push(name);
     }
 
     isOptionReloaded(name) {
-        return this.options.includes(name);
+        return this.optionNames.includes(name);
+    }
+
+    getOptionNames() {
+        return this.optionNames;
+    }
+
+    addAttachmentRow(attachment) {
+        this.attachmentRows.push(attachment);
+    }
+
+    getAttachmentRows() {
+        return this.attachmentRows;
     }
 
     /**
@@ -119,24 +132,25 @@ export default class LoadResults {
      *          notably changes in note itself should not have any effect on attributes
      */
     hasAttributeRelatedChanges() {
-        return this.branches.length > 0
-            || this.attributes.length > 0;
+        return this.branchRows.length > 0
+            || this.attributeRows.length > 0;
     }
 
     isEmpty() {
         return Object.keys(this.noteIdToComponentId).length === 0
-            && this.branches.length === 0
-            && this.attributes.length === 0
+            && this.branchRows.length === 0
+            && this.attributeRows.length === 0
             && this.noteReorderings.length === 0
-            && this.noteRevisions.length === 0
+            && this.revisionRows.length === 0
             && this.contentNoteIdToComponentId.length === 0
-            && this.options.length === 0;
+            && this.optionNames.length === 0
+            && this.attachmentRows.length === 0;
     }
 
     isEmptyForTree() {
         return Object.keys(this.noteIdToComponentId).length === 0
-            && this.branches.length === 0
-            && this.attributes.length === 0
+            && this.branchRows.length === 0
+            && this.attributeRows.length === 0
             && this.noteReorderings.length === 0;
     }
 }

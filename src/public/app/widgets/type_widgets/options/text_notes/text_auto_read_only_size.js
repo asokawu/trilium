@@ -2,13 +2,13 @@ import OptionsWidget from "../options_widget.js";
 
 const TPL = `
 <div class="options-section">
-    <h4>Automatic read-only size</h4>
+    <h4>Automatic Read-Only Size</h4>
 
     <p>Automatic read-only note size is the size after which notes will be displayed in a read-only mode (for performance reasons).</p>
 
     <div class="form-group">
         <label>Automatic read-only size (text notes)</label>
-        <input class="auto-readonly-size-text form-control" type="number" min="0" style="text-align: right;">
+        <input class="auto-readonly-size-text form-control options-number-input" type="number" min="0">
     </div>
 </div>`;
 

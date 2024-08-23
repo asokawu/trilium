@@ -98,6 +98,14 @@ const TPL = `
             <th>Promoted:</th>
             <td><input type="checkbox" class="attr-input-promoted form-control form-control-sm" /></td>
         </tr>
+        <tr class="attr-row-promoted-alias">
+            <th title="The name to be displayed in the promoted attributes UI.">Alias:</th>
+            <td>
+                <div class="input-group">
+                    <input type="text" class="attr-input-promoted-alias form-control" />
+                </div>
+            </td>
+        </tr>
         <tr class="attr-row-multiplicity">
             <th title="Multiplicity defines how many attributes of the same name can be created - at max 1 or more than 1.">Multiplicity:</th>
             <td>
@@ -115,6 +123,7 @@ const TPL = `
                   <option value="number">Number</option>
                   <option value="boolean">Boolean</option>
                   <option value="date">Date</option>
+                  <option value="datetime">Date & Time</option>
                   <option value="url">URL</option>
                 </select>
             </td>
@@ -216,6 +225,7 @@ const ATTR_HELP = {
         "sqlConsoleHome": "default location of SQL console notes",
         "bookmarkFolder": "note with this label will appear in bookmarks as folder (allowing access to its children)",
         "shareHiddenFromTree": "this note is hidden from left navigation tree, but still accessible with its URL",
+        "shareExternalLink": "note will act as a link to an external website in the share tree",
         "shareAlias": "define an alias using which the note will be available under https://your_trilium_host/share/[your_alias]",
         "shareOmitDefaultCss": "default share page CSS will be omitted. Use when you make extensive styling changes.",
         "shareRoot": "marks note which is served on /share root.",
@@ -243,7 +253,8 @@ const ATTR_HELP = {
         "executeButton": "Title of the button which will execute the current code note",
         "executeDescription": "Longer description of the current code note displayed together with the execute button",
         "excludeFromNoteMap": "Notes with this label will be hidden from the Note Map",
-        "newNotesOnTop": "New notes will be created at the top of the parent note, not on the bottom."
+        "newNotesOnTop": "New notes will be created at the top of the parent note, not on the bottom.",
+        "hideHighlightWidget": "Hide Hightlight List widget"
     },
     "relation": {
         "runOnNoteCreation": "executes when note is created on backend. Use this relation if you want to run the script for all notes created under a specific subtree. In that case, create it on the subtree root note and make it inheritable. A new note created within the subtree (any depth) will trigger the script.",
@@ -253,6 +264,7 @@ const ATTR_HELP = {
         "runOnNoteChange": "executes when note is changed (includes note creation as well). Does not include content changes",
         "runOnNoteDeletion": "executes when note is being deleted",
         "runOnBranchCreation": "executes when a branch is created. Branch is a link between parent note and child note and is created e.g. when cloning or moving note.",
+        "runOnBranchChange": "executes when a branch is updated.",
         "runOnBranchDeletion": "executes when a branch is deleted. Branch is a link between parent note and child note and is deleted e.g. when moving note (old branch/link is deleted).",
         "runOnAttributeCreation": "executes when new attribute is created for the note which defines this relation",
         "runOnAttributeChange": " executes when the attribute is changed of a note which defines this relation. This is triggered also when the attribute is deleted",
@@ -262,6 +274,7 @@ const ATTR_HELP = {
         "widget": "target of this relation will be executed and rendered as a widget in the sidebar",
         "shareCss": "CSS note which will be injected into the share page. CSS note must be in the shared sub-tree as well. Consider using 'shareHiddenFromTree' and 'shareOmitDefaultCss' as well.",
         "shareJs": "JavaScript note which will be injected into the share page. JS note must be in the shared sub-tree as well. Consider using 'shareHiddenFromTree'.",
+        "shareTemplate": "Embedded JavaScript note that will be used as the template for displaying the shared note. Falls back to the default template. Consider using 'shareHiddenFromTree'.",
         "shareFavicon": "Favicon note to be set in the shared page. Typically you want to set it to share root and make it inheritable. Favicon note must be in the shared sub-tree as well. Consider using 'shareHiddenFromTree'.",
     }
 };
@@ -321,6 +334,10 @@ export default class AttributeDetailWidget extends NoteContextAwareWidget {
         this.$rowPromoted = this.$widget.find('.attr-row-promoted');
         this.$inputPromoted = this.$widget.find('.attr-input-promoted');
         this.$inputPromoted.on('change', () => this.userEditedAttribute());
+
+        this.$rowPromotedAlias = this.$widget.find('.attr-row-promoted-alias');
+        this.$inputPromotedAlias = this.$widget.find('.attr-input-promoted-alias');
+        this.$inputPromotedAlias.on('change', () => this.userEditedAttribute());
 
         this.$rowMultiplicity = this.$widget.find('.attr-row-multiplicity');
         this.$inputMultiplicity = this.$widget.find('.attr-input-multiplicity');
@@ -437,7 +454,7 @@ export default class AttributeDetailWidget extends NoteContextAwareWidget {
                 .empty()
                 .append(attribute.type === 'label' ? 'Label' : 'Relation')
                 .append(' is owned by note ')
-                .append(await linkService.createNoteLink(attribute.noteId))
+                .append(await linkService.createLink(attribute.noteId))
         }
 
         this.$inputName
@@ -450,6 +467,11 @@ export default class AttributeDetailWidget extends NoteContextAwareWidget {
         this.$rowPromoted.toggle(['label-definition', 'relation-definition'].includes(this.attrType));
         this.$inputPromoted
             .prop("checked", !!definition.isPromoted)
+            .attr('disabled', () => !isOwned);
+
+        this.$rowPromotedAlias.toggle(!!definition.isPromoted);
+        this.$inputPromotedAlias
+            .val(definition.promotedAlias)
             .attr('disabled', () => !isOwned);
 
         this.$rowMultiplicity.toggle(['label-definition', 'relation-definition'].includes(this.attrType));
@@ -602,7 +624,7 @@ export default class AttributeDetailWidget extends NoteContextAwareWidget {
 
             for (const note of displayedNotes) {
                 const notePath = note.getBestNotePathString(hoistedNoteId);
-                const $noteLink = await linkService.createNoteLink(notePath, {showNotePath: true});
+                const $noteLink = await linkService.createLink(notePath, {showNotePath: true});
 
                 this.$relatedNotesList.append(
                     $("<li>").append($noteLink)
@@ -672,6 +694,10 @@ export default class AttributeDetailWidget extends NoteContextAwareWidget {
 
         if (this.$inputPromoted.is(":checked")) {
             props.push("promoted");
+
+            if (this.$inputPromotedAlias.val() !== '') {
+                props.push(`alias=${this.$inputPromotedAlias.val()}`);
+            }
         }
 
         props.push(this.$inputMultiplicity.val());
@@ -692,6 +718,8 @@ export default class AttributeDetailWidget extends NoteContextAwareWidget {
             this.attrType === 'label-definition'
             && this.$inputLabelType.val() === 'number');
 
+        this.$rowPromotedAlias.toggle(this.$inputPromoted.is(":checked"));
+
         return props.join(",");
     }
 
@@ -699,11 +727,10 @@ export default class AttributeDetailWidget extends NoteContextAwareWidget {
         this.toggleInt(false);
     }
 
-    createNoteLink(noteId) {
+    createLink(noteId) {
         return $("<a>", {
-            href: `#${noteId}`,
-            class: 'reference-link',
-            'data-note-path': noteId
+            href: `#root/${noteId}`,
+            class: 'reference-link'
         });
     }
 

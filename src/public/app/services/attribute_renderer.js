@@ -17,10 +17,10 @@ async function renderAttribute(attribute, renderIsInheritable) {
             return $attr;
         }
 
-        // when the relation has just been created then it might not have a value
+        // when the relation has just been created, then it might not have a value
         if (attribute.value) {
             $attr.append(document.createTextNode(`~${attribute.name}${isInheritable}=`));
-            $attr.append(await createNoteLink(attribute.value));
+            $attr.append(await createLink(attribute.value));
         }
     } else {
         ws.logError(`Unknown attr type: ${attribute.type}`);
@@ -47,7 +47,7 @@ function formatValue(val) {
     }
 }
 
-async function createNoteLink(noteId) {
+async function createLink(noteId) {
     const note = await froca.getNote(noteId);
 
     if (!note) {
@@ -56,8 +56,7 @@ async function createNoteLink(noteId) {
 
     return $("<a>", {
         href: `#root/${noteId}`,
-        class: 'reference-link',
-        'data-note-path': noteId
+        class: 'reference-link'
     })
         .text(note.title);
 }

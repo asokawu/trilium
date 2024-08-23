@@ -113,8 +113,8 @@ export default class EditableTextTypeWidget extends AbstractTextTypeWidget {
                         label: mt.title
                     }));
 
-        // CKEditor since version 12 needs the element to be visible before initialization. At the same time
-        // we want to avoid flicker - i.e. show editor only once everything is ready. That's why we have separate
+        // CKEditor since version 12 needs the element to be visible before initialization. At the same time,
+        // we want to avoid flicker - i.e., show editor only once everything is ready. That's why we have separate
         // display of $widget in both branches.
         this.$widget.show();
 
@@ -131,7 +131,7 @@ export default class EditableTextTypeWidget extends AbstractTextTypeWidget {
             // This prevents an infinite restart loop.
             crashNumberLimit: 3,
             // A minimum number of milliseconds between saving the editor data internally (defaults to 5000).
-            // Note that for large documents this might impact the editor performance.
+            // Note that for large documents, this might impact the editor performance.
             saveInterval: 5000
         });
 
@@ -183,17 +183,17 @@ export default class EditableTextTypeWidget extends AbstractTextTypeWidget {
     }
 
     async doRefresh(note) {
-        const noteComplement = await froca.getNoteComplement(note.noteId);
+        const blob = await note.getBlob();
 
         await this.spacedUpdate.allowUpdateWithoutChange(() =>
-            this.watchdog.editor.setData(noteComplement.content || ""));
+            this.watchdog.editor.setData(blob.content || ""));
     }
 
     getData() {
         const content = this.watchdog.editor.getData();
 
-        // if content is only tags/whitespace (typically <p>&nbsp;</p>), then just make it empty
-        // this is important when setting new note to code
+        // if content is only tags/whitespace (typically <p>&nbsp;</p>), then just make it empty,
+        // this is important when setting a new note to code
         return {
             content: utils.isHtmlEmpty(content) ? '' : content
         };
@@ -201,6 +201,14 @@ export default class EditableTextTypeWidget extends AbstractTextTypeWidget {
 
     focus() {
         this.$editor.trigger('focus');
+    }
+
+    scrollToEnd() {
+        this.watchdog?.editor.model.change(writer => {
+            writer.setSelection(writer.createPositionAt(this.watchdog?.editor.model.document.getRoot(), 'end'));
+        });
+
+        this.watchdog?.editor.editing.view.focus();
     }
 
     show() {}
@@ -261,7 +269,7 @@ export default class EditableTextTypeWidget extends AbstractTextTypeWidget {
             }
         }
         else {
-            this.watchdog.editor.execute('referenceLink', { notePath: notePath });
+            this.watchdog.editor.execute('referenceLink', { href: '#' + notePath });
         }
 
         this.watchdog.editor.editing.view.focus();
@@ -357,12 +365,10 @@ export default class EditableTextTypeWidget extends AbstractTextTypeWidget {
         const note = await froca.getNote(noteId);
 
         this.watchdog.editor.model.change( writer => {
-            const sanitizedTitle = note.title.replace(/[^a-z0-9-.]/gi, "");
-            const src = `api/images/${note.noteId}/${sanitizedTitle}`;
+            const encodedTitle = encodeURIComponent(note.title);
+            const src = `api/images/${note.noteId}/${encodedTitle}`;
 
-            const imageElement = writer.createElement( 'image',  { 'src': src } );
-
-            this.watchdog.editor.model.insertContent(imageElement, this.watchdog.editor.model.document.selection);
+            this.watchdog.editor.execute( 'insertImage', { source: src } );
         } );
     }
 

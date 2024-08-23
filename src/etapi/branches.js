@@ -1,9 +1,9 @@
-const becca = require("../becca/becca");
-const eu = require("./etapi_utils");
-const mappers = require("./mappers");
-const BBranch = require("../becca/entities/bbranch");
-const entityChangesService = require("../services/entity_changes");
-const v = require("./validators");
+const becca = require('../becca/becca.js');
+const eu = require('./etapi_utils.js');
+const mappers = require('./mappers.js');
+const BBranch = require('../becca/entities/bbranch.js');
+const entityChangesService = require('../services/entity_changes.js');
+const v = require('./validators.js');
 
 function register(router) {
     eu.route(router, 'get', '/etapi/branches/:branchId', (req, res, next) => {
@@ -13,7 +13,6 @@ function register(router) {
     });
 
     const ALLOWED_PROPERTIES_FOR_CREATE_BRANCH = {
-        'branchId': [v.mandatory, v.notNull, v.isValidEntityId],
         'noteId': [v.mandatory, v.notNull, v.isNoteId],
         'parentNoteId': [v.mandatory, v.notNull, v.isNoteId],
         'notePosition': [v.notNull, v.isInteger],
@@ -64,7 +63,7 @@ function register(router) {
     eu.route(router, 'delete' ,'/etapi/branches/:branchId', (req, res, next) => {
         const branch = becca.getBranch(req.params.branchId);
 
-        if (!branch || branch.isDeleted) {
+        if (!branch) {
             return res.sendStatus(204);
         }
 
@@ -76,7 +75,7 @@ function register(router) {
     eu.route(router, 'post' ,'/etapi/refresh-note-ordering/:parentNoteId', (req, res, next) => {
         eu.getAndCheckNote(req.params.parentNoteId);
 
-        entityChangesService.addNoteReorderingEntityChange(req.params.parentNoteId, "etapi");
+        entityChangesService.putNoteReorderingEntityChange(req.params.parentNoteId, "etapi");
 
         res.sendStatus(204);
     });

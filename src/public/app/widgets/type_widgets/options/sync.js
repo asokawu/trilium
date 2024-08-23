@@ -4,7 +4,7 @@ import OptionsWidget from "./options_widget.js";
 
 const TPL = `
 <div class="options-section">
-    <h4 style="margin-top: 0px;">Sync configuration</h4>
+    <h4 style="margin-top: 0px;">Sync Configuration</h4>
     
     <form class="sync-setup-form">
         <div class="form-group">
@@ -21,7 +21,8 @@ const TPL = `
             <label>Sync proxy server (optional)</label>
             <input class="sync-proxy form-control" placeholder="https://<host>:<port>">
     
-            <p><strong>Note:</strong> If you leave the proxy setting blank, the system proxy will be used (applies to desktop/electron build only)</p>
+            <p><strong>Note:</strong> If you leave the proxy setting blank, the system proxy will be used (applies to desktop/electron build only).</p>
+            <p>Another special value is <code>noproxy</code> which forces ignoring even the system proxy and respectes <code>NODE_TLS_REJECT_UNAUTHORIZED</code>.</p>
         </div>
     
         <div style="display: flex; justify-content: space-between;">
@@ -33,7 +34,7 @@ const TPL = `
 </div>
 
 <div class="options-section">
-    <h4>Sync test</h4>
+    <h4>Sync Test</h4>
     
     <p>This will test the connection and handshake to the sync server. If the sync server isn't initialized, this will set it up to sync with the local document.</p>
     

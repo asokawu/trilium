@@ -1,13 +1,13 @@
 "use strict";
 
-const utils = require('../services/utils');
-const optionService = require('../services/options');
-const myScryptService = require('../services/my_scrypt');
-const log = require('../services/log');
-const passwordService = require("../services/password");
-const assetPath = require("../services/asset_path");
-const appPath = require("../services/app_path");
-const ValidationError = require("../errors/validation_error");
+const utils = require('../services/utils.js');
+const optionService = require('../services/options.js');
+const myScryptService = require('../services/encryption/my_scrypt.js');
+const log = require('../services/log.js');
+const passwordService = require('../services/encryption/password.js');
+const assetPath = require('../services/asset_path.js');
+const appPath = require('../services/app_path.js');
+const ValidationError = require('../errors/validation_error.js');
 
 function loginPage(req, res) {
     res.render('login', {
@@ -59,7 +59,7 @@ function login(req, res) {
     const guessedPassword = req.body.password;
 
     if (verifyPassword(guessedPassword)) {
-        const rememberMe = req.body.remember_me;
+        const rememberMe = req.body.rememberMe;
 
         req.session.regenerate(() => {
             if (rememberMe) {

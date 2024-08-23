@@ -1,8 +1,8 @@
 "use strict";
 
-const becca = require('../../becca/becca');
-const log = require('../../services/log');
-const NotFoundError = require("../../errors/not_found_error");
+const becca = require('../../becca/becca.js');
+const log = require('../../services/log.js');
+const NotFoundError = require('../../errors/not_found_error.js');
 
 function getNotesAndBranchesAndAttributes(noteIds) {
     noteIds = new Set(noteIds);
@@ -58,7 +58,8 @@ function getNotesAndBranchesAndAttributes(noteIds) {
             title: note.getTitleOrProtected(),
             isProtected: note.isProtected,
             type: note.type,
-            mime: note.mime
+            mime: note.mime,
+            blobId: note.blobId
         });
     }
 

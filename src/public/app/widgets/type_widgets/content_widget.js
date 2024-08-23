@@ -22,7 +22,7 @@ import SyncOptions from "./options/sync.js";
 import SearchEngineOptions from "./options/other/search_engine.js";
 import TrayOptions from "./options/other/tray.js";
 import NoteErasureTimeoutOptions from "./options/other/note_erasure_timeout.js";
-import NoteRevisionsSnapshotIntervalOptions from "./options/other/note_revisions_snapshot_interval.js";
+import RevisionsSnapshotIntervalOptions from "./options/other/revisions_snapshot_interval.js";
 import NetworkConnectionsOptions from "./options/other/network_connections.js";
 import AdvancedSyncOptions from "./options/advanced/sync.js";
 import DatabaseIntegrityCheckOptions from "./options/advanced/database_integrity_check.js";
@@ -30,6 +30,8 @@ import ConsistencyChecksOptions from "./options/advanced/consistency_checks.js";
 import VacuumDatabaseOptions from "./options/advanced/vacuum_database.js";
 import DatabaseAnonymizationOptions from "./options/advanced/database_anonymization.js";
 import BackendLogWidget from "./content/backend_log.js";
+import AttachmentErasureTimeoutOptions from "./options/other/attachment_erasure_timeout.js";
+import RibbonOptions from "./options/appearance/ribbon.js";
 
 const TPL = `<div class="note-detail-content-widget note-detail-printable">
     <style>
@@ -52,11 +54,12 @@ const TPL = `<div class="note-detail-content-widget note-detail-printable">
 
 const CONTENT_WIDGETS = {
     _optionsAppearance: [
-        ZoomFactorOptions,
-        NativeTitleBarOptions,
         ThemeOptions,
         FontsOptions,
-        MaxContentWidthOptions
+        ZoomFactorOptions,
+        NativeTitleBarOptions,
+        MaxContentWidthOptions,
+        RibbonOptions
     ],
     _optionsShortcuts: [ KeyboardShortcutsOptions ],
     _optionsTextNotes: [
@@ -81,7 +84,8 @@ const CONTENT_WIDGETS = {
         SearchEngineOptions,
         TrayOptions,
         NoteErasureTimeoutOptions,
-        NoteRevisionsSnapshotIntervalOptions,
+        AttachmentErasureTimeoutOptions,
+        RevisionsSnapshotIntervalOptions,
         NetworkConnectionsOptions
     ],
     _optionsAdvanced: [

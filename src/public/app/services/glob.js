@@ -4,18 +4,19 @@ import server from "./server.js";
 import libraryLoader from "./library_loader.js";
 import ws from "./ws.js";
 import froca from "./froca.js";
+import linkService from "./link.js";
 
 function setupGlobs() {
-    window.glob.PROFILING_LOG = false;
-
     window.glob.isDesktop = utils.isDesktop;
     window.glob.isMobile = utils.isMobile;
 
     window.glob.getComponentByEl = el => appContext.getComponentByEl(el);
     window.glob.getHeaders = server.getHeaders;
+    window.glob.getReferenceLinkTitle = href => linkService.getReferenceLinkTitle(href);
+    window.glob.getReferenceLinkTitleSync = href => linkService.getReferenceLinkTitleSync(href);
 
     // required for ESLint plugin and CKEditor
-    window.glob.getActiveTabNote = () => appContext.tabManager.getActiveContextNote();
+    window.glob.getActiveContextNote = () => appContext.tabManager.getActiveContextNote();
     window.glob.requireLibrary = libraryLoader.requireLibrary;
     window.glob.ESLINT = libraryLoader.ESLINT;
     window.glob.appContext = appContext; // for debugging

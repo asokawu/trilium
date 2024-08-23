@@ -1,7 +1,7 @@
 "use strict";
 
-const utils = require('../utils');
-const becca = require("../../becca/becca");
+const utils = require('../utils.js');
+const becca = require('../../becca/becca.js');
 
 function exportToOpml(taskContext, branch, version, res) {
     if (!['1.0', '2.0'].includes(version)) {
@@ -24,13 +24,13 @@ function exportToOpml(taskContext, branch, version, res) {
 
         if (opmlVersion === 1) {
             const preparedTitle = escapeXmlAttribute(title);
-            const preparedContent = note.isStringNote() ? prepareText(note.getContent()) : '';
+            const preparedContent = note.hasStringContent() ? prepareText(note.getContent()) : '';
 
             res.write(`<outline title="${preparedTitle}" text="${preparedContent}">\n`);
         }
         else if (opmlVersion === 2) {
             const preparedTitle = escapeXmlAttribute(title);
-            const preparedContent = note.isStringNote() ? escapeXmlAttribute(note.getContent()) : '';
+            const preparedContent = note.hasStringContent() ? escapeXmlAttribute(note.getContent()) : '';
 
             res.write(`<outline text="${preparedTitle}" _note="${preparedContent}">\n`);
         }

@@ -9,10 +9,7 @@ Content-Type: application/json
   "content": "Hi there!"
 }
 
-> {%
-    client.global.set("createdNoteId", response.body.note.noteId);
-    client.global.set("createdBranchId", response.body.branch.branchId);
-%}
+> {% client.global.set("createdNoteId", response.body.note.noteId); %}
 
 ###
 
@@ -29,20 +26,6 @@ Content-Type: application/json
 }
 
 > {% client.global.set("createdAttributeId", response.body.attributeId); %}
-
-###
-
-GET {{triliumHost}}/etapi/notes/{{createdNoteId}}
-Authorization: {{authToken}}
-
-> {% client.assert(response.status === 200); %}
-
-###
-
-GET {{triliumHost}}/etapi/branches/{{createdBranchId}}
-Authorization: {{authToken}}
-
-> {% client.assert(response.status === 200); %}
 
 ###
 

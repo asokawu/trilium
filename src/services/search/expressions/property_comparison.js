@@ -1,12 +1,12 @@
 "use strict";
 
-const Expression = require('./expression');
-const NoteSet = require('../note_set');
-const buildComparator = require("../services/build_comparator");
+const Expression = require('./expression.js');
+const NoteSet = require('../note_set.js');
+const buildComparator = require('../services/build_comparator.js');
 
 /**
- * Search string is lower cased for case-insensitive comparison. But when retrieving properties
- * we need case-sensitive form, so we have this translation object.
+ * Search string is lower cased for case-insensitive comparison. But when retrieving properties,
+ * we need the case-sensitive form, so we have this translation object.
  */
 const PROP_MAPPING = {
     "noteid": "noteId",
@@ -31,7 +31,8 @@ const PROP_MAPPING = {
     "targetrelationcount": "targetRelationCount",
     "targetrelationcountincludinglinks": "targetRelationCountIncludingLinks",
     "contentsize": "contentSize",
-    "notesize": "noteSize",
+    "contentandattachmentssize": "contentAndAttachmentsSize",
+    "contentandattachmentsandrevisionssize": "contentAndAttachmentsAndRevisionsSize",
     "revisioncount": "revisionCount"
 };
 
@@ -48,7 +49,7 @@ class PropertyComparisonExp extends Expression {
         this.comparedValue = comparedValue; // for DEBUG mode
         this.comparator = buildComparator(operator, comparedValue);
 
-        if (['contentsize', 'notesize', 'revisioncount'].includes(this.propertyName)) {
+        if (['contentsize', 'contentandattachmentssize', 'contentandattachmentsandrevisionssize', 'revisioncount'].includes(this.propertyName)) {
             searchContext.dbLoadNeeded = true;
         }
     }

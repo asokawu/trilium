@@ -13,8 +13,8 @@ async function createNote(parentNotePath, options = {}) {
         target: 'into'
     }, options);
 
-    // if isProtected isn't available (user didn't enter password yet), then note is created as unencrypted
-    // but this is quite weird since user doesn't see WHERE the note is being created, so it shouldn't occur often
+    // if isProtected isn't available (user didn't enter password yet), then note is created as unencrypted,
+    // but this is quite weird since the user doesn't see WHERE the note is being created, so it shouldn't occur often
     if (!options.isProtected || !protectedSessionHolder.isProtectedSessionAvailable()) {
         options.isProtected = false;
     }
@@ -27,7 +27,7 @@ async function createNote(parentNotePath, options = {}) {
         [options.title, options.content] = parseSelectedHtml(options.textEditor.getSelectedHtml());
     }
 
-    const parentNoteId = treeService.getNoteIdFromNotePath(parentNotePath);
+    const parentNoteId = treeService.getNoteIdFromUrl(parentNotePath);
 
     if (options.type === 'mermaid' && !options.content) {
         options.content = `graph TD;
@@ -93,7 +93,7 @@ async function createNoteWithTypePrompt(parentNotePath, options = {}) {
     return await createNote(parentNotePath, options);
 }
 
-/* If first element is heading, parse it out and use it as a new heading. */
+/* If the first element is heading, parse it out and use it as a new heading. */
 function parseSelectedHtml(selectedHtml) {
     const dom = $.parseHTML(selectedHtml);
 
@@ -110,7 +110,7 @@ function parseSelectedHtml(selectedHtml) {
 }
 
 async function duplicateSubtree(noteId, parentNotePath) {
-    const parentNoteId = treeService.getNoteIdFromNotePath(parentNotePath);
+    const parentNoteId = treeService.getNoteIdFromUrl(parentNotePath);
     const {note} = await server.post(`notes/${noteId}/duplicate/${parentNoteId}`);
 
     await ws.waitForMaxKnownEntityChangeId();

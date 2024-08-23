@@ -141,7 +141,7 @@ export default class ExportDialog extends BasicWidget {
             const exportType = this.$widget.find("input[name='export-type']:checked").val();
 
             if (!exportType) {
-                // this shouldn't happen as we always choose default export type
+                // this shouldn't happen as we always choose a default export type
                 toastService.showError("Choose export type first please");
                 return;
             }
@@ -203,14 +203,14 @@ export default class ExportDialog extends BasicWidget {
             this.$singleType.prop("checked", true).trigger('change');
         }
         else {
-            throw new Error(`Unrecognized type ${defaultType}`);
+            throw new Error(`Unrecognized type '${defaultType}'`);
         }
 
         this.$widget.find(".opml-v2").prop("checked", true); // setting default
 
         utils.openDialog(this.$widget);
 
-        const {noteId, parentNoteId} = treeService.getNoteIdAndParentIdFromNotePath(notePath);
+        const {noteId, parentNoteId} = treeService.getNoteIdAndParentIdFromUrl(notePath);
 
         this.branchId = await froca.getBranchId(parentNoteId, noteId);
         this.$noteTitle.text(await treeService.getNoteTitle(noteId));
@@ -219,7 +219,7 @@ export default class ExportDialog extends BasicWidget {
     exportBranch(branchId, type, format, version) {
         this.taskId = utils.randomString(10);
 
-        const url = openService.getUrlForDownload(`api/notes/${branchId}/export/${type}/${format}/${version}/${this.taskId}`);
+        const url = openService.getUrlForDownload(`api/branches/${branchId}/export/${type}/${format}/${version}/${this.taskId}`);
 
         openService.download(url);
     }

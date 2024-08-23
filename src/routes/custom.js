@@ -1,9 +1,9 @@
-const log = require('../services/log');
-const fileUploadService = require('./api/files');
-const scriptService = require('../services/script');
-const cls = require('../services/cls');
-const sql = require("../services/sql");
-const becca = require("../becca/becca");
+const log = require('../services/log.js');
+const fileService = require('./api/files.js');
+const scriptService = require('../services/script.js');
+const cls = require('../services/cls.js');
+const sql = require('../services/sql.js');
+const becca = require('../becca/becca.js');
 
 function handleRequest(req, res) {
     // express puts content after first slash into 0 index element
@@ -26,7 +26,7 @@ function handleRequest(req, res) {
             match = path.match(regex);
         }
         catch (e) {
-            log.error(`Testing path for label ${attr.attributeId}, regex=${attr.value} failed with error ${e.stack}`);
+            log.error(`Testing path for label '${attr.attributeId}', regex '${attr.value}' failed with error: ${e.message}, stack: ${e.stack}`);
             continue;
         }
 
@@ -37,7 +37,7 @@ function handleRequest(req, res) {
         if (attr.name === 'customRequestHandler') {
             const note = attr.getNote();
 
-            log.info(`Handling custom request "${path}" with note ${note.noteId}`);
+            log.info(`Handling custom request '${path}' with note '${note.noteId}'`);
 
             try {
                 scriptService.executeNote(note, {
@@ -47,7 +47,7 @@ function handleRequest(req, res) {
                 });
             }
             catch (e) {
-                log.error(`Custom handler ${note.noteId} failed with ${e.message}`);
+                log.error(`Custom handler '${note.noteId}' failed with: ${e.message}, ${e.stack}`);
 
                 res.setHeader("Content-Type", "text/plain")
                     .status(500)
@@ -55,16 +55,16 @@ function handleRequest(req, res) {
             }
         }
         else if (attr.name === 'customResourceProvider') {
-            fileUploadService.downloadNoteFile(attr.noteId, res);
+            fileService.downloadNoteInt(attr.noteId, res);
         }
         else {
-            throw new Error(`Unrecognized attribute name ${attr.name}`);
+            throw new Error(`Unrecognized attribute name '${attr.name}'`);
         }
 
-        return; // only first handler is executed
+        return; // only the first handler is executed
     }
 
-    const message = `No handler matched for custom ${path} request.`;
+    const message = `No handler matched for custom '${path}' request.`;
 
     log.info(message);
     res.setHeader("Content-Type", "text/plain")

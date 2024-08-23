@@ -4,7 +4,7 @@ import toastService from "../../../../services/toast.js";
 
 const TPL = `
 <div class="options-section">
-    <h4>Note erasure timeout</h4>
+    <h4>Note Erasure Timeout</h4>
 
     <p>Deleted notes (and attributes, revisions...) are at first only marked as deleted and it is possible to recover them 
     from Recent Notes dialog. After a period of time, deleted notes are "erased" which means 
@@ -13,10 +13,10 @@ const TPL = `
 
     <div class="form-group">
         <label>Erase notes after X seconds</label>
-        <input class="erase-entities-after-time-in-seconds form-control" type="number" min="0">
+        <input class="erase-entities-after-time-in-seconds form-control options-number-input" type="number" min="0">
     </div>
     
-    <p>You can also trigger erasing manually:</p>
+    <p>You can also trigger erasing manually (without considering the timeout defined above):</p>
     
     <button class="erase-deleted-notes-now-button btn">Erase deleted notes now</button>
 </div>`;

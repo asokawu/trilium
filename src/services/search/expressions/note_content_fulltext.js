@@ -1,12 +1,12 @@
 "use strict";
 
-const Expression = require('./expression');
-const NoteSet = require('../note_set');
-const log = require('../../log');
-const becca = require('../../../becca/becca');
-const protectedSessionService = require('../../protected_session');
+const Expression = require('./expression.js');
+const NoteSet = require('../note_set.js');
+const log = require('../../log.js');
+const becca = require('../../../becca/becca.js');
+const protectedSessionService = require('../../protected_session.js');
 const striptags = require('striptags');
-const utils = require("../../utils");
+const utils = require('../../utils.js');
 
 const ALLOWED_OPERATORS = ['=', '!=', '*=*', '*=', '=*', '%='];
 
@@ -38,11 +38,11 @@ class NoteContentFulltextExp extends Expression {
         }
 
         const resultNoteSet = new NoteSet();
-        const sql = require('../../sql');
+        const sql = require('../../sql.js');
 
         for (const row of sql.iterateRows(`
                 SELECT noteId, type, mime, content, isProtected
-                FROM notes JOIN note_contents USING (noteId) 
+                FROM notes JOIN blobs USING (blobId) 
                 WHERE type IN ('text', 'code', 'mermaid') AND isDeleted = 0`)) {
 
             this.findInText(row, inputNoteSet, resultNoteSet);
@@ -91,7 +91,7 @@ class NoteContentFulltextExp extends Expression {
             const nonMatchingToken = this.tokens.find(token =>
                 !content.includes(token) &&
                 (
-                    // in case of default fulltext search we should consider both title, attrs and content
+                    // in case of default fulltext search, we should consider both title, attrs and content
                     // so e.g. "hello world" should match when "hello" is in title and "world" in content
                     !this.flatText
                     || !becca.notes[noteId].getFlatText().includes(token)
@@ -111,17 +111,30 @@ class NoteContentFulltextExp extends Expression {
 
         if (type === 'text' && mime === 'text/html') {
             if (!this.raw && content.length < 20000) { // striptags is slow for very large notes
-                // allow link to preserve URLs: https://github.com/zadam/trilium/issues/2412
-                content = striptags(content, ['a'], ' ');
-
-                // at least the closing tag can be easily stripped
-                content = content.replace(/<\/a>/ig, "");
+                content = this.stripTags(content);
             }
 
             content = content.replace(/&nbsp;/g, ' ');
         }
 
         return content.trim();
+    }
+
+    stripTags(content) {
+        // we want to allow link to preserve URLs: https://github.com/zadam/trilium/issues/2412
+        // we want to insert space in place of block tags (because they imply text separation)
+        // but we don't want to insert text for typical formatting inline tags which can occur within one word
+        const linkTag = 'a';
+        const inlineFormattingTags = ['b', 'strong', 'em', 'i', 'span', 'big', 'small', 'font', 'sub', 'sup'];
+
+        // replace tags which imply text separation with a space
+        content = striptags(content, [linkTag, ...inlineFormattingTags], ' ');
+
+        // replace the inline formatting tags (but not links) without a space
+        content = striptags(content, [linkTag], '');
+
+        // at least the closing link tag can be easily stripped
+        return content.replace(/<\/a>/ig, "");
     }
 }
 

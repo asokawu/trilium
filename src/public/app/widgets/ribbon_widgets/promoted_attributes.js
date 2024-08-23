@@ -4,10 +4,18 @@ import treeService from "../../services/tree.js";
 import noteAutocompleteService from "../../services/note_autocomplete.js";
 import NoteContextAwareWidget from "../note_context_aware_widget.js";
 import attributeService from "../../services/attributes.js";
+import options from "../../services/options.js";
+import utils from "../../services/utils.js";
 
 const TPL = `
-<div>
+<div class="promoted-attributes-widget">
     <style>
+    body.mobile .promoted-attributes-widget {
+        /* https://github.com/zadam/trilium/issues/4468 */
+        flex-shrink: 0.4;
+        overflow: auto;
+    }
+    
     .promoted-attributes-container {
         margin: auto;
         display: flex;
@@ -31,13 +39,18 @@ const TPL = `
     }
     .promoted-attribute-cell strong {
         word-break:keep-all;
+        white-space: nowrap;
     }
     </style>
     
     <div class="promoted-attributes-container"></div>
-</div>
-`;
+</div>`;
 
+/**
+ * This widget is quite special because it's used in the desktop ribbon, but in mobile outside of ribbon.
+ * This works without many issues (apart from autocomplete), but it should be kept in mind when changing things
+ * and testing.
+ */
 export default class PromotedAttributesWidget extends NoteContextAwareWidget {
     get name() {
         return "promotedAttributes";
@@ -62,7 +75,7 @@ export default class PromotedAttributesWidget extends NoteContextAwareWidget {
 
         return {
             show: true,
-            activate: true,
+            activate: options.is('promotedAttributesOpenInRibbon'),
             title: "Promoted Attributes",
             icon: "bx bx-table"
         };
@@ -73,6 +86,10 @@ export default class PromotedAttributesWidget extends NoteContextAwareWidget {
 
         const promotedDefAttrs = note.getPromotedDefinitionAttributes();
         const ownedAttributes = note.getOwnedAttributes();
+        // attrs are not resorted if position changes after the initial load
+        // promoted attrs are sorted primarily by order of definitions, but with multi-valued promoted attrs
+        // the order of attributes is important as well
+        ownedAttributes.sort((a, b) => a.position - b.position);
 
         if (promotedDefAttrs.length === 0) {
             this.toggleInt(false);
@@ -107,7 +124,7 @@ export default class PromotedAttributesWidget extends NoteContextAwareWidget {
             }
         }
 
-        // we replace the whole content in one step so there can't be any race conditions
+        // we replace the whole content in one step, so there can't be any race conditions
         // (previously we saw promoted attributes doubling)
         this.$container.empty().append(...$cells);
         this.toggleInt(true);
@@ -132,7 +149,7 @@ export default class PromotedAttributesWidget extends NoteContextAwareWidget {
             .attr("nowrap", true);
 
         const $wrapper = $('<div class="promoted-attribute-cell">')
-            .append($("<strong>").text(valueName))
+            .append($("<strong>").text(definition.promotedAlias ?? valueName))
             .append($("<div>").addClass("input-group").append($input))
             .append($actionCell)
             .append($multiplicityCell);
@@ -141,34 +158,37 @@ export default class PromotedAttributesWidget extends NoteContextAwareWidget {
             if (definition.labelType === 'text') {
                 $input.prop("type", "text");
 
-                // no need to await for this, can be done asynchronously
-                server.get(`attributes/values/${encodeURIComponent(valueAttr.name)}`).then(attributeValues => {
-                    if (attributeValues.length === 0) {
-                        return;
-                    }
-
-                    attributeValues = attributeValues.map(attribute => ({value: attribute}));
-
-                    $input.autocomplete({
-                        appendTo: document.querySelector('body'),
-                        hint: false,
-                        autoselect: false,
-                        openOnFocus: true,
-                        minLength: 0,
-                        tabAutocomplete: false
-                    }, [{
-                        displayKey: 'value',
-                        source: function (term, cb) {
-                            term = term.toLowerCase();
-
-                            const filtered = attributeValues.filter(attr => attr.value.toLowerCase().includes(term));
-
-                            cb(filtered);
+                // autocomplete for label values is just nice to have, mobile can keep labels editable without autocomplete
+                if (utils.isDesktop()) {
+                    // no need to await for this, can be done asynchronously
+                    server.get(`attribute-values/${encodeURIComponent(valueAttr.name)}`).then(attributeValues => {
+                        if (attributeValues.length === 0) {
+                            return;
                         }
-                    }]);
 
-                    $input.on('autocomplete:selected', e => this.promotedAttributeChanged(e));
-                });
+                        attributeValues = attributeValues.map(attribute => ({value: attribute}));
+
+                        $input.autocomplete({
+                            appendTo: document.querySelector('body'),
+                            hint: false,
+                            autoselect: false,
+                            openOnFocus: true,
+                            minLength: 0,
+                            tabAutocomplete: false
+                        }, [{
+                            displayKey: 'value',
+                            source: function (term, cb) {
+                                term = term.toLowerCase();
+
+                                const filtered = attributeValues.filter(attr => attr.value.toLowerCase().includes(term));
+
+                                cb(filtered);
+                            }
+                        }]);
+
+                        $input.on('autocomplete:selected', e => this.promotedAttributeChanged(e));
+                    });
+                }
             }
             else if (definition.labelType === 'number') {
                 $input.prop("type", "number");
@@ -197,6 +217,9 @@ export default class PromotedAttributesWidget extends NoteContextAwareWidget {
             else if (definition.labelType === 'date') {
                 $input.prop("type", "date");
             }
+            else if (definition.labelType === 'datetime') {
+                $input.prop('type', 'datetime-local')
+            }
             else if (definition.labelType === 'url') {
                 $input.prop("placeholder", "http://website...");
 
@@ -210,7 +233,7 @@ export default class PromotedAttributesWidget extends NoteContextAwareWidget {
                     .append($openButton));
             }
             else {
-                ws.logError(`Unknown labelType=${definitionAttr.labelType}`);
+                ws.logError(`Unknown labelType '${definitionAttr.labelType}'`);
             }
         }
         else if (valueAttr.type === 'relation') {
@@ -218,17 +241,22 @@ export default class PromotedAttributesWidget extends NoteContextAwareWidget {
                 $input.val(await treeService.getNoteTitle(valueAttr.value));
             }
 
-            // no need to wait for this
-            noteAutocompleteService.initNoteAutocomplete($input, {allowCreatingNotes: true});
+            if (utils.isDesktop()) {
+                // no need to wait for this
+                noteAutocompleteService.initNoteAutocomplete($input, {allowCreatingNotes: true});
 
-            $input.on('autocomplete:noteselected', (event, suggestion, dataset) => {
-                this.promotedAttributeChanged(event);
-            });
+                $input.on('autocomplete:noteselected', (event, suggestion, dataset) => {
+                    this.promotedAttributeChanged(event);
+                });
 
-            $input.setSelectedNotePath(valueAttr.value);
+                $input.setSelectedNotePath(valueAttr.value);
+            } else {
+                // we can't provide user a way to edit the relation so make it read only
+                $input.attr("readonly", "readonly");
+            }
         }
         else {
-            ws.logError(`Unknown attribute type=${valueAttr.type}`);
+            ws.logError(`Unknown attribute type '${valueAttr.type}'`);
             return;
         }
 
@@ -297,7 +325,7 @@ export default class PromotedAttributesWidget extends NoteContextAwareWidget {
         else if ($attr.attr("data-attribute-type") === "relation") {
             const selectedPath = $attr.getSelectedNotePath();
 
-            value = selectedPath ? treeService.getNoteIdFromNotePath(selectedPath) : "";
+            value = selectedPath ? treeService.getNoteIdFromUrl(selectedPath) : "";
         }
         else {
             value = $attr.val();
@@ -318,7 +346,7 @@ export default class PromotedAttributesWidget extends NoteContextAwareWidget {
     }
 
     entitiesReloadedEvent({loadResults}) {
-        if (loadResults.getAttributes(this.componentId).find(attr => attributeService.isAffecting(attr, this.note))) {
+        if (loadResults.getAttributeRows(this.componentId).find(attr => attributeService.isAffecting(attr, this.note))) {
             this.refresh();
         }
     }

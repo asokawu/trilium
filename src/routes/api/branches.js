@@ -1,48 +1,40 @@
 "use strict";
 
-const sql = require('../../services/sql');
-const utils = require('../../services/utils');
-const entityChangesService = require('../../services/entity_changes');
-const treeService = require('../../services/tree');
-const noteService = require('../../services/notes');
-const becca = require('../../becca/becca');
-const TaskContext = require('../../services/task_context');
-const branchService = require("../../services/branches");
-const log = require("../../services/log");
-const ValidationError = require("../../errors/validation_error");
-const NotFoundError = require("../../errors/not_found_error");
+const sql = require('../../services/sql.js');
+const utils = require('../../services/utils.js');
+const entityChangesService = require('../../services/entity_changes.js');
+const treeService = require('../../services/tree.js');
+const eraseService = require('../../services/erase.js');
+const becca = require('../../becca/becca.js');
+const TaskContext = require('../../services/task_context.js');
+const branchService = require('../../services/branches.js');
+const log = require('../../services/log.js');
+const ValidationError = require('../../errors/validation_error.js');
+const eventService = require("../../services/events.js");
 
 /**
- * Code in this file deals with moving and cloning branches. Relationship between note and parent note is unique
+ * Code in this file deals with moving and cloning branches. The relationship between note and parent note is unique
  * for not deleted branches. There may be multiple deleted note-parent note relationships.
  */
 
 function moveBranchToParent(req) {
     const {branchId, parentBranchId} = req.params;
 
-    const parentBranch = becca.getBranch(parentBranchId);
     const branchToMove = becca.getBranch(branchId);
+    const targetParentBranch = becca.getBranch(parentBranchId);
 
-    if (!parentBranch || !branchToMove) {
-        throw new ValidationError(`One or both branches ${branchId}, ${parentBranchId} have not been found`);
+    if (!branchToMove || !targetParentBranch) {
+        throw new ValidationError(`One or both branches '${branchId}', '${parentBranchId}' have not been found`);
     }
 
-    return branchService.moveBranchToBranch(branchToMove, parentBranch, branchId);
+    return branchService.moveBranchToBranch(branchToMove, targetParentBranch, branchId);
 }
 
 function moveBranchBeforeNote(req) {
     const {branchId, beforeBranchId} = req.params;
 
-    const branchToMove = becca.getBranch(branchId);
-    const beforeBranch = becca.getBranch(beforeBranchId);
-
-    if (!branchToMove) {
-        throw new NotFoundError(`Can't find branch '${branchId}'`);
-    }
-
-    if (!beforeBranch) {
-        throw new NotFoundError(`Can't find branch '${beforeBranchId}'`);
-    }
+    const branchToMove = becca.getBranchOrThrow(branchId);
+    const beforeBranch = becca.getBranchOrThrow(beforeBranchId);
 
     const validationResult = treeService.validateParentChild(beforeBranch.parentNoteId, branchToMove.noteId, branchId);
 
@@ -52,7 +44,7 @@ function moveBranchBeforeNote(req) {
 
     const originalBeforeNotePosition = beforeBranch.notePosition;
 
-    // we don't change utcDateModified so other changes are prioritized in case of conflict
+    // we don't change utcDateModified, so other changes are prioritized in case of conflict
     // also we would have to sync all those modified branches otherwise hash checks would fail
 
     sql.execute("UPDATE branches SET notePosition = notePosition + 10 WHERE parentNoteId = ? AND notePosition >= ? AND isDeleted = 0",
@@ -80,8 +72,8 @@ function moveBranchBeforeNote(req) {
 
     treeService.sortNotesIfNeeded(parentNote.noteId);
 
-    // if sorting is not needed then still the ordering might have changed above manually
-    entityChangesService.addNoteReorderingEntityChange(parentNote.noteId);
+    // if sorting is not needed, then still the ordering might have changed above manually
+    entityChangesService.putNoteReorderingEntityChange(parentNote.noteId);
 
     log.info(`Moved note ${branchToMove.noteId}, branch ${branchId} before note ${beforeBranch.noteId}, branch ${beforeBranchId}`);
 
@@ -102,7 +94,7 @@ function moveBranchAfterNote(req) {
 
     const originalAfterNotePosition = afterNote.notePosition;
 
-    // we don't change utcDateModified so other changes are prioritized in case of conflict
+    // we don't change utcDateModified, so other changes are prioritized in case of conflict
     // also we would have to sync all those modified branches otherwise hash checks would fail
     sql.execute("UPDATE branches SET notePosition = notePosition + 10 WHERE parentNoteId = ? AND notePosition > ? AND isDeleted = 0",
         [afterNote.parentNoteId, originalAfterNotePosition]);
@@ -131,8 +123,8 @@ function moveBranchAfterNote(req) {
 
     treeService.sortNotesIfNeeded(parentNote.noteId);
 
-    // if sorting is not needed then still the ordering might have changed above manually
-    entityChangesService.addNoteReorderingEntityChange(parentNote.noteId);
+    // if sorting is not needed, then still the ordering might have changed above manually
+    entityChangesService.putNoteReorderingEntityChange(parentNote.noteId);
 
     log.info(`Moved note ${branchToMove.noteId}, branch ${branchId} after note ${afterNote.noteId}, branch ${afterBranchId}`);
 
@@ -153,6 +145,11 @@ function setExpanded(req) {
         if (branch) {
             branch.isExpanded = !!expanded;
         }
+
+        eventService.emit(eventService.ENTITY_CHANGED, {
+            entityName: 'branches',
+            entity: branch
+        });
     }
 }
 
@@ -192,13 +189,9 @@ function setExpandedForSubtree(req) {
 function deleteBranch(req) {
     const last = req.query.last === 'true';
     const eraseNotes = req.query.eraseNotes === 'true';
-    const branch = becca.getBranch(req.params.branchId);
+    const branch = becca.getBranchOrThrow(req.params.branchId);
 
-    if (!branch) {
-        throw new NotFoundError(`Branch '${req.params.branchId}' not found`);
-    }
-
-    const taskContext = TaskContext.getInstance(req.query.taskId, 'delete-notes');
+    const taskContext = TaskContext.getInstance(req.query.taskId, 'deleteNotes');
 
     const deleteId = utils.randomString(10);
     let noteDeleted;
@@ -206,7 +199,7 @@ function deleteBranch(req) {
     if (eraseNotes) {
         // erase automatically means deleting all clones + note itself
         branch.getNote().deleteNote(deleteId, taskContext);
-        noteService.eraseNotesWithDeleteId(deleteId);
+        eraseService.eraseNotesWithDeleteId(deleteId);
         noteDeleted = true;
     } else {
         noteDeleted = branch.deleteBranch(deleteId, taskContext);

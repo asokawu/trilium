@@ -44,7 +44,7 @@ export default class NoteWrapperWidget extends FlexContainer {
 
         this.$widget.toggleClass("full-content-width",
             ['image', 'mermaid', 'book', 'render', 'canvas', 'webView'].includes(note.type)
-            || !!note?.hasLabel('fullContentWidth')
+            || !!note?.isLabelTruthy('fullContentWidth')
         );
 
         this.$widget.addClass(note.getCssClass());
@@ -60,7 +60,7 @@ export default class NoteWrapperWidget extends FlexContainer {
 
         const noteId = this.noteContext?.noteId;
         if (loadResults.isNoteReloaded(noteId)
-            || loadResults.getAttributes().find(attr => attr.type === 'label' && attr.name === 'cssClass' && attributeService.isAffecting(attr, this.noteContext?.note))) {
+            || loadResults.getAttributeRows().find(attr => attr.type === 'label' && attr.name === 'cssClass' && attributeService.isAffecting(attr, this.noteContext?.note))) {
 
             this.refresh();
         }

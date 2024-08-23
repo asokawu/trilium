@@ -1,8 +1,8 @@
 "use strict";
 
-const sql = require('../../sql');
-const utils = require('../../../services/utils');
-const AbstractShacaEntity = require('./abstract_shaca_entity');
+const sql = require('../../sql.js');
+const utils = require('../../../services/utils.js');
+const AbstractShacaEntity = require('./abstract_shaca_entity.js');
 const escape = require('escape-html');
 
 const LABEL = 'label';
@@ -12,7 +12,7 @@ const CREDENTIALS = 'shareCredentials';
 const isCredentials = attr => attr.type === 'label' && attr.name === CREDENTIALS;
 
 class SNote extends AbstractShacaEntity {
-    constructor([noteId, title, type, mime, utcDateModified, isProtected]) {
+    constructor([noteId, title, type, mime, blobId, utcDateModified, isProtected]) {
         super();
 
         /** @param {string} */
@@ -23,6 +23,8 @@ class SNote extends AbstractShacaEntity {
         this.type = type;
         /** @param {string} */
         this.mime = mime;
+        /** @param {string} */
+        this.blobId = blobId;
         /** @param {string} */
         this.utcDateModified = utcDateModified; // used for caching of images
         /** @param {boolean} */
@@ -45,6 +47,9 @@ class SNote extends AbstractShacaEntity {
         /** @param {SAttribute[]} */
         this.targetRelations = [];
 
+        /** @param {SAttachment[]} */
+        this.attachments = [];
+
         this.shaca.notes[this.noteId] = this;
     }
 
@@ -63,6 +68,13 @@ class SNote extends AbstractShacaEntity {
         return this.children.map(childNote => this.shaca.getBranchFromChildAndParent(childNote.noteId, this.noteId));
     }
 
+    /** @returns {SBranch[]} */
+    getVisibleChildBranches() {
+        return this.getChildBranches()
+            .filter(branch => !branch.isHidden
+                && !branch.getNote().isLabelTruthy('shareHiddenFromTree'));
+    }
+
     /** @returns {SNote[]} */
     getParentNotes() {
         return this.parents;
@@ -75,10 +87,8 @@ class SNote extends AbstractShacaEntity {
 
     /** @returns {SNote[]} */
     getVisibleChildNotes() {
-        return this.getChildBranches()
-            .filter(branch => !branch.isHidden)
-            .map(branch => branch.getNote())
-            .filter(childNote => !childNote.hasLabel('shareHiddenFromTree'));
+        return this.getVisibleChildBranches()
+            .map(branch => branch.getNote());
     }
 
     /** @returns {boolean} */
@@ -92,23 +102,23 @@ class SNote extends AbstractShacaEntity {
     }
 
     getContent(silentNotFoundError = false) {
-        const row = sql.getRow(`SELECT content FROM note_contents WHERE noteId = ?`, [this.noteId]);
+        const row = sql.getRow(`SELECT content FROM blobs WHERE blobId = ?`, [this.blobId]);
 
         if (!row) {
             if (silentNotFoundError) {
                 return undefined;
             }
             else {
-                throw new Error(`Cannot find note content for noteId=${this.noteId}`);
+                throw new Error(`Cannot find note content for note '${this.noteId}', blob '${this.blobId}'`);
             }
         }
 
         let content = row.content;
 
-        if (this.isStringNote()) {
+        if (this.hasStringContent()) {
             return content === null
                 ? ""
-                : content.toString("UTF-8");
+                : content.toString("utf-8");
         }
         else {
             return content;
@@ -116,7 +126,7 @@ class SNote extends AbstractShacaEntity {
     }
 
     /** @returns {boolean} true if the note has string content (not binary) */
-    isStringNote() {
+    hasStringContent() {
         return utils.isStringNote(this.type, this.mime);
     }
 
@@ -235,6 +245,20 @@ class SNote extends AbstractShacaEntity {
 
     /**
      * @param {string} name - label name
+     * @returns {boolean} true if label exists (including inherited) and does not have "false" value.
+     */
+    isLabelTruthy(name) {
+        const label = this.getLabel(name);
+
+        if (!label) {
+            return false;
+        }
+
+        return label && label.value !== 'false';
+    }
+
+    /**
+     * @param {string} name - label name
      * @returns {boolean} true if label exists (excluding inherited)
      */
     hasOwnedLabel(name) { return this.hasOwnedAttribute(LABEL, name); }
@@ -311,7 +335,8 @@ class SNote extends AbstractShacaEntity {
     /**
      * @param {string} type - attribute type (label, relation, etc.)
      * @param {string} name - attribute name
-     * @returns {SAttribute} attribute of given type and name. If there's more such attributes, first is  returned. Returns null if there's no such attribute belonging to this note.
+     * @returns {SAttribute} attribute of the given type and name. If there are more such attributes, first is  returned.
+     *                       Returns null if there's no such attribute belonging to this note.
      */
     getAttribute(type, name) {
         const attributes = this.getAttributes();
@@ -322,7 +347,7 @@ class SNote extends AbstractShacaEntity {
     /**
      * @param {string} type - attribute type (label, relation, etc.)
      * @param {string} name - attribute name
-     * @returns {string|null} attribute value of given type and name or null if no such attribute exists.
+     * @returns {string|null} attribute value of the given type and name or null if no such attribute exists.
      */
     getAttributeValue(type, name) {
         const attr = this.getAttribute(type, name);
@@ -333,7 +358,7 @@ class SNote extends AbstractShacaEntity {
     /**
      * @param {string} type - attribute type (label, relation, etc.)
      * @param {string} name - attribute name
-     * @returns {string|null} attribute value of given type and name or null if no such attribute exists.
+     * @returns {string|null} attribute value of the given type and name or null if no such attribute exists.
      */
     getOwnedAttributeValue(type, name) {
         const attr = this.getOwnedAttribute(type, name);
@@ -440,6 +465,16 @@ class SNote extends AbstractShacaEntity {
         return this.targetRelations;
     }
 
+    /** @returns {SAttachment[]} */
+    getAttachments() {
+        return this.attachments;
+    }
+
+    /** @returns {SAttachment} */
+    getAttachmentByTitle(title) {
+        return this.attachments.find(attachment => attachment.title === title);
+    }
+
     /** @returns {string} */
     get shareId() {
         if (this.hasOwnedLabel('shareRoot')) {
@@ -455,7 +490,11 @@ class SNote extends AbstractShacaEntity {
         return escape(this.title);
     }
 
-    getPojoWithAttributes() {
+    get encodedTitle() {
+        return encodeURIComponent(this.title);
+    }
+
+    getPojo() {
         return {
             noteId: this.noteId,
             title: this.title,
@@ -467,6 +506,8 @@ class SNote extends AbstractShacaEntity {
                 // individual relations might be whitelisted based on needs #3434
                 .filter(attr => attr.type === 'label')
                 .map(attr => attr.getPojo()),
+            attachments: this.getAttachments()
+                .map(attachment => attachment.getPojo()),
             parentNoteIds: this.parents.map(parentNote => parentNote.noteId),
             childNoteIds: this.children.map(child => child.noteId)
         };

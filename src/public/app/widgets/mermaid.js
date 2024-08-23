@@ -1,6 +1,6 @@
 import libraryLoader from "../services/library_loader.js";
 import NoteContextAwareWidget from "./note_context_aware_widget.js";
-import froca from "../services/froca.js";
+import server from "../services/server.js";
 
 const TPL = `<div class="mermaid-widget">
     <style>
@@ -18,6 +18,10 @@ const TPL = `<div class="mermaid-widget">
             overflow: auto;
             height: 100%;
             text-align: center;
+        }
+        
+        .mermaid-render svg {
+            width: 95%; /* https://github.com/zadam/trilium/issues/4340 */
         }
     </style>
 
@@ -76,19 +80,33 @@ export default class MermaidWidget extends NoteContextAwareWidget {
         this.$errorContainer.hide();
 
         try {
-            await this.renderSvg(async renderedSvg => {
-                this.$display.html(renderedSvg);
+            const svg = await this.renderSvg();
 
-                await wheelZoomLoaded;
+            if (this.dirtyAttachment) {
+                const payload = {
+                    role: 'image',
+                    title: 'mermaid-export.svg',
+                    mime: 'image/svg+xml',
+                    content: svg,
+                    position: 0
+                };
 
-                this.$display.attr("id", `mermaid-render-${idCounter}`);
-
-                WZoom.create(`#mermaid-render-${idCounter}`, {
-                    type: 'html',
-                    maxScale: 10,
-                    speed: 20,
-                    zoomOnClick: false
+                server.post(`notes/${this.noteId}/attachments?matchBy=title`, payload).then(() => {
+                    this.dirtyAttachment = false;
                 });
+            }
+
+            this.$display.html(svg);
+
+            await wheelZoomLoaded;
+
+            this.$display.attr("id", `mermaid-render-${idCounter}`);
+
+            WZoom.create(`#mermaid-render-${idCounter}`, {
+                type: 'html',
+                maxScale: 50,
+                speed: 1.3,
+                zoomOnClick: false
             });
         } catch (e) {
             this.$errorMessage.text(e.message);
@@ -96,19 +114,20 @@ export default class MermaidWidget extends NoteContextAwareWidget {
         }
     }
 
-    async renderSvg(cb) {
+    async renderSvg() {
         idCounter++;
 
-        const noteComplement = await froca.getNoteComplement(this.noteId);
-        const content = noteComplement.content || "";
+        const blob = await this.note.getBlob();
+        const content = blob.content || "";
 
-        // this can't be promisified since in case of error this both calls callback with error SVG and throws exception
-        // with error details
-        mermaid.mermaidAPI.render(`mermaid-graph-${idCounter}`, content, cb);
+        const {svg} = await mermaid.mermaidAPI.render(`mermaid-graph-${idCounter}`, content);
+        return svg;
     }
 
     async entitiesReloadedEvent({loadResults}) {
         if (loadResults.isNoteContentReloaded(this.noteId)) {
+            this.dirtyAttachment = true;
+
             await this.refresh();
         }
     }
@@ -118,9 +137,8 @@ export default class MermaidWidget extends NoteContextAwareWidget {
             return;
         }
 
-        await this.renderSvg(renderedSvg => {
-            this.download(`${this.note.title}.svg`, renderedSvg);
-        });
+        const svg = await this.renderSvg();
+        this.download(`${this.note.title}.svg`, svg);
     }
 
     download(filename, text) {

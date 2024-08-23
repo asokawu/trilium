@@ -1,7 +1,11 @@
 import BasicWidget from "./basic_widget.js";
 import appContext from "../components/app_context.js";
 
-export default class NoteContextAwareWidget extends BasicWidget {
+/**
+ * This widget allows for changing and updating depending on the active note.
+ * @extends {BasicWidget}
+ */
+class NoteContextAwareWidget extends BasicWidget {
     isNoteContext(ntxId) {
         if (Array.isArray(ntxId)) {
             return this.noteContext && ntxId.includes(this.noteContext.ntxId);
@@ -19,18 +23,22 @@ export default class NoteContextAwareWidget extends BasicWidget {
         return this.noteId === noteId;
     }
 
+    /** @returns {FNote|undefined} */
     get note() {
         return this.noteContext?.note;
     }
 
+    /** @returns {string|undefined} */
     get noteId() {
         return this.note?.noteId;
     }
 
+    /** @returns {string|undefined} */
     get notePath() {
         return this.noteContext?.notePath;
     }
 
+    /** @returns {string} */
     get hoistedNoteId() {
         return this.noteContext?.hoistedNoteId;
     }
@@ -39,32 +47,33 @@ export default class NoteContextAwareWidget extends BasicWidget {
         return this.noteContext?.ntxId;
     }
 
+    /**
+     * @returns {boolean} true when an active note exists
+     */
     isEnabled() {
         return !!this.note;
     }
 
     async refresh() {
         if (this.isEnabled()) {
-            const start = Date.now();
-
             this.toggleInt(true);
             await this.refreshWithNote(this.note);
-
-            const end = Date.now();
-
-            if (glob.PROFILING_LOG && end - start > 10) {
-                console.log(`Refresh of ${this.componentId} took ${end-start}ms`);
-            }
         }
         else {
             this.toggleInt(false);
         }
     }
 
+    /**
+     * Override this method to be able to refresh your
+     * widget with each note.
+     * @param {FNote} note
+     * @returns {Promise<void>}
+     */
     async refreshWithNote(note) {}
 
     async noteSwitchedEvent({noteContext, notePath}) {
-        // if notePath does not match then the noteContext has been switched to another note in the meantime
+        // if notePath does not match, then the noteContext has been switched to another note in the meantime
         if (noteContext.notePath === notePath) {
             await this.noteSwitched();
         }
@@ -84,11 +93,11 @@ export default class NoteContextAwareWidget extends BasicWidget {
         await this.refresh();
     }
 
-    // when note is both switched and activated, this should not produce double refresh
+    // when note is both switched and activated, this should not produce a double refresh
     async noteSwitchedAndActivatedEvent({noteContext, notePath}) {
         this.noteContext = noteContext;
 
-        // if notePath does not match then the noteContext has been switched to another note in the meantime
+        // if notePath does not match, then the noteContext has been switched to another note in the meantime
         if (this.notePath === notePath) {
             await this.refresh();
         }
@@ -109,3 +118,5 @@ export default class NoteContextAwareWidget extends BasicWidget {
         await this.refresh();
     }
 }
+
+export default NoteContextAwareWidget;

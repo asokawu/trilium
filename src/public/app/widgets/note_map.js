@@ -55,7 +55,7 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
         this.$container = this.$widget.find(".note-map-container");
         this.$styleResolver = this.$widget.find('.style-resolver');
 
-        new ResizeObserver(() => this.setDimensions()).observe(this.$container[0])
+        new ResizeObserver(() => this.setDimensions()).observe(this.$container[0]);
 
         this.$widget.find(".map-type-switcher button").on("click",  async e => {
             const type = $(e.target).closest("button").attr("data-type");
@@ -78,7 +78,7 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
             .width($parent.width());
     }
 
-    async refreshWithNote() {
+    async refreshWithNote(note) {
         this.$widget.show();
 
         this.css = {
@@ -113,7 +113,7 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
             .linkWidth(1)
             .linkColor(() => this.css.mutedTextColor)
             .onNodeClick(node => appContext.tabManager.getActiveContext().setNote(node.id))
-            .onNodeRightClick((node, e) => linkContextMenuService.openContextMenu(node.id, null, e));
+            .onNodeRightClick((node, e) => linkContextMenuService.openContextMenu(node.id, e));
 
         if (this.mapType === 'link') {
             this.graph
@@ -429,7 +429,7 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
     }
 
     entitiesReloadedEvent({loadResults}) {
-        if (loadResults.getAttributes(this.componentId).find(
+        if (loadResults.getAttributeRows(this.componentId).find(
             attr =>
                 attr.type === 'label'
                 && ['mapType', 'mapRootNoteId'].includes(attr.name)

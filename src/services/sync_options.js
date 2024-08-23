@@ -1,7 +1,7 @@
 "use strict";
 
-const optionService = require('./options');
-const config = require('./config');
+const optionService = require('./options.js');
+const config = require('./config.js');
 
 /*
  * Primary configuration for sync is in the options (document), but we allow to override
@@ -21,7 +21,7 @@ module.exports = {
     isSyncSetup: () => {
         const syncServerHost = get('syncServerHost');
 
-        // special value "disabled" is here to support use case where document is configured with sync server,
+        // special value "disabled" is here to support a use case where the document is configured with sync server,
         // and we need to override it with config from config.ini
         return !!syncServerHost && syncServerHost !== 'disabled';
     },

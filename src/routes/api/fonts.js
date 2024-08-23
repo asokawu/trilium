@@ -1,4 +1,4 @@
-const optionService = require('../../services/options');
+const optionService = require('../../services/options.js');
 
 function getFontCss(req, res) {
     res.setHeader('Content-Type', 'text/css');
@@ -9,7 +9,7 @@ function getFontCss(req, res) {
         return;
     }
 
-    const optionsMap = optionService.getOptionsMap();
+    const optionsMap = optionService.getOptionMap();
 
     const mainFontFamilyOverridden = optionsMap.mainFontFamily !== 'theme';
     const treeFontFamilyOverridden = optionsMap.treeFontFamily !== 'theme';

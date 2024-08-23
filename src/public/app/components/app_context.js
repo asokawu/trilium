@@ -6,9 +6,9 @@ import options from "../services/options.js";
 import utils from "../services/utils.js";
 import zoomComponent from "./zoom.js";
 import TabManager from "./tab_manager.js";
-import treeService from "../services/tree.js";
 import Component from "./component.js";
 import keyboardActionsService from "../services/keyboard_actions.js";
+import linkService from "../services/link.js";
 import MobileScreenSwitcherExecutor from "./mobile_screen_switcher.js";
 import MainTreeExecutors from "./main_tree_executors.js";
 import toast from "../services/toast.js";
@@ -76,6 +76,10 @@ class AppContext extends Component {
         $("body").append($renderedWidget);
 
         $renderedWidget.on('click', "[data-trigger-command]", function() {
+            if ($(this).hasClass("disabled")) {
+                return;
+            }
+
             const commandName = $(this).attr('data-trigger-command');
             const $component = $(this).closest(".component");
             const component = $component.prop("component");
@@ -103,7 +107,7 @@ class AppContext extends Component {
             }
         }
 
-        // this might hint at error but sometimes this is used by components which are at different places
+        // this might hint at error, but sometimes this is used by components which are at different places
         // in the component tree to communicate with each other
         console.debug(`Unhandled command ${name}, converting to event.`);
 
@@ -154,15 +158,10 @@ $(window).on('beforeunload', () => {
 });
 
 $(window).on('hashchange', function() {
-    if (treeService.isNotePathInAddress()) {
-        const [notePath, ntxId] = treeService.getHashValueFromAddress();
+    const {notePath, ntxId, viewScope} = linkService.parseNavigationStateFromUrl(window.location.href);
 
-        if (!notePath && !ntxId) {
-            console.log(`Invalid hash value "${document.location.hash}", ignoring.`);
-            return;
-        }
-
-        appContext.tabManager.switchToNoteContext(ntxId, notePath);
+    if (notePath || ntxId) {
+        appContext.tabManager.switchToNoteContext(ntxId, notePath, viewScope);
     }
 });
 

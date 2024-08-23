@@ -1,12 +1,12 @@
 "use strict";
 
-const BNote = require('./bnote');
-const AbstractBeccaEntity = require("./abstract_becca_entity");
-const dateUtils = require("../../services/date_utils");
-const utils = require("../../services/utils");
-const TaskContext = require("../../services/task_context");
-const cls = require("../../services/cls");
-const log = require("../../services/log");
+const BNote = require('./bnote.js');
+const AbstractBeccaEntity = require('./abstract_becca_entity.js');
+const dateUtils = require('../../services/date_utils.js');
+const utils = require('../../services/utils.js');
+const TaskContext = require('../../services/task_context.js');
+const cls = require('../../services/cls.js');
+const log = require('../../services/log.js');
 
 /**
  * Branch represents a relationship between a child note and its parent note. Trilium allows a note to have multiple
@@ -103,6 +103,7 @@ class BBranch extends AbstractBeccaEntity {
         return this.becca.notes[this.noteId];
     }
 
+    /** @returns {BNote} */
     getNote() {
         return this.childNote;
     }
@@ -160,7 +161,7 @@ class BBranch extends AbstractBeccaEntity {
 
             if (parentBranches.length === 1 && parentBranches[0] === this) {
                 // needs to be run before branches and attributes are deleted and thus attached relations disappear
-                const handlers = require("../../services/handlers");
+                const handlers = require('../../services/handlers.js');
                 handlers.runAttachedRelations(note, 'runOnNoteDeletion', note);
             }
         }
@@ -186,16 +187,20 @@ class BBranch extends AbstractBeccaEntity {
 
             // first delete children and then parent - this will show up better in recent changes
 
-            log.info(`Deleting note ${note.noteId}`);
+            log.info(`Deleting note '${note.noteId}'`);
 
             this.becca.notes[note.noteId].isBeingDeleted = true;
 
-            for (const attribute of note.getOwnedAttributes()) {
+            for (const attribute of note.getOwnedAttributes().slice()) {
                 attribute.markAsDeleted(deleteId);
             }
 
             for (const relation of note.getTargetRelations()) {
                 relation.markAsDeleted(deleteId);
+            }
+
+            for (const attachment of note.getAttachments()) {
+                attachment.markAsDeleted(deleteId);
             }
 
             note.markAsDeleted(deleteId);
@@ -219,7 +224,7 @@ class BBranch extends AbstractBeccaEntity {
 
             for (const childBranch of this.parentNote.getChildBranches()) {
                 if (maxNotePos < childBranch.notePosition
-                    && childBranch.noteId !== '_hidden' // hidden has very large notePosition to always stay last
+                    && childBranch.noteId !== '_hidden' // hidden has a very large notePosition to always stay last
                 ) {
                     maxNotePos = childBranch.notePosition;
                 }

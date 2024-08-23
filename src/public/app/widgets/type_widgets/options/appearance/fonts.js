@@ -31,7 +31,7 @@ const TPL = `
 <div class="options-section">
     <h4>Fonts</h4>
     
-    <h5>Main font</h5>
+    <h5>Main Font</h5>
     
     <div class="form-group row">
         <div class="col-6">
@@ -43,7 +43,7 @@ const TPL = `
             <label>Size</label>
 
             <div class="input-group">
-                <input type="number" class="main-font-size form-control" min="50" max="200" step="10"/>
+                <input type="number" class="main-font-size form-control options-number-input" min="50" max="200" step="10"/>
                 <div class="input-group-append">
                     <span class="input-group-text">%</span>
                 </div>
@@ -51,7 +51,7 @@ const TPL = `
         </div>
     </div>
 
-    <h5>Note tree font</h5>
+    <h5>Note Tree Font</h5>
 
     <div class="form-group row">
         <div class="col-4">
@@ -63,7 +63,7 @@ const TPL = `
             <label>Size</label>
 
             <div class="input-group">
-                <input type="number" class="tree-font-size form-control" min="50" max="200" step="10"/>
+                <input type="number" class="tree-font-size form-control options-number-input" min="50" max="200" step="10"/>
                 <div class="input-group-append">
                     <span class="input-group-text">%</span>
                 </div>
@@ -71,7 +71,7 @@ const TPL = `
         </div>
     </div>
     
-    <h5>Note detail font</h5>
+    <h5>Note Detail Font</h5>
     
     <div class="form-group row">
         <div class="col-4">
@@ -83,7 +83,7 @@ const TPL = `
             <label>Size</label>
 
             <div class="input-group">
-                <input type="number" class="detail-font-size form-control" min="50" max="200" step="10"/>
+                <input type="number" class="detail-font-size form-control options-number-input" min="50" max="200" step="10"/>
                 <div class="input-group-append">
                     <span class="input-group-text">%</span>
                 </div>
@@ -91,7 +91,7 @@ const TPL = `
         </div>
     </div>
     
-    <h5>Monospace (code) font</h5>
+    <h5>Monospace (code) Font</h5>
     
     <div class="form-group row">
         <div class="col-4">
@@ -103,7 +103,7 @@ const TPL = `
             <label>Size</label>
 
             <div class="input-group">
-                <input type="number" class="monospace-font-size form-control" min="50" max="200" step="10"/>
+                <input type="number" class="monospace-font-size form-control options-number-input" min="50" max="200" step="10"/>
                 <div class="input-group-append">
                     <span class="input-group-text">%</span>
                 </div>

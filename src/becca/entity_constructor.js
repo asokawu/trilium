@@ -1,26 +1,28 @@
-const BNote = require('./entities/bnote');
-const BNoteRevision = require('./entities/bnote_revision');
-const BBranch = require('./entities/bbranch');
-const BAttribute = require('./entities/battribute');
-const BRecentNote = require('./entities/brecent_note');
-const BEtapiToken = require('./entities/betapi_token');
-const BOption = require('./entities/boption');
+const BAttachment = require('./entities/battachment.js');
+const BAttribute = require('./entities/battribute.js');
+const BBlob = require('./entities/bblob.js');
+const BBranch = require('./entities/bbranch.js');
+const BEtapiToken = require('./entities/betapi_token.js');
+const BNote = require('./entities/bnote.js');
+const BOption = require('./entities/boption.js');
+const BRecentNote = require('./entities/brecent_note.js');
+const BRevision = require('./entities/brevision.js');
 
 const ENTITY_NAME_TO_ENTITY = {
+    "attachments": BAttachment,
     "attributes": BAttribute,
+    "blobs": BBlob,
     "branches": BBranch,
-    "notes": BNote,
-    "note_contents": BNote,
-    "note_revisions": BNoteRevision,
-    "note_revision_contents": BNoteRevision,
-    "recent_notes": BRecentNote,
     "etapi_tokens": BEtapiToken,
-    "options": BOption
+    "notes": BNote,
+    "options": BOption,
+    "recent_notes": BRecentNote,
+    "revisions": BRevision
 };
 
 function getEntityFromEntityName(entityName) {
     if (!(entityName in ENTITY_NAME_TO_ENTITY)) {
-        throw new Error(`Entity for table ${entityName} not found!`);
+        throw new Error(`Entity for table '${entityName}' not found!`);
     }
 
     return ENTITY_NAME_TO_ENTITY[entityName];

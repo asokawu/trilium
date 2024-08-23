@@ -25,7 +25,7 @@ const TPL = `
         </div>
     
         <div class="form-group">
-            <label>New password Confirmation</label>
+            <label>New password confirmation</label>
             <input class="new-password2 form-control" type="password">
         </div>
     
@@ -34,14 +34,14 @@ const TPL = `
 </div>
 
 <div class="options-section">
-    <h4>Protected session timeout</h4>
+    <h4>Protected Session Timeout</h4>
 
     <p>Protected session timeout is a time period after which the protected session is wiped from
         the browser's memory. This is measured from the last interaction with protected notes. See <a href="https://github.com/zadam/trilium/wiki/Protected-notes" class="external">wiki</a> for more info.</p>
 
     <div class="form-group">
         <label>Protected session timeout (in seconds)</label>
-        <input class="protected-session-timeout-in-seconds form-control" type="number" min="60">
+        <input class="protected-session-timeout-in-seconds form-control options-number-input" type="number" min="60">
     </div>
 </div>`;
 
@@ -79,8 +79,8 @@ export default class PasswordOptions extends OptionsWidget {
         const isPasswordSet = options.isPasswordSet === 'true';
 
         this.$widget.find(".old-password-form-group").toggle(isPasswordSet);
-        this.$passwordHeading.text(isPasswordSet ? 'Change password' : 'Set password');
-        this.$savePasswordButton.text(isPasswordSet ? 'Change password' : 'Set password');
+        this.$passwordHeading.text(isPasswordSet ? 'Change Password' : 'Set Password');
+        this.$savePasswordButton.text(isPasswordSet ? 'Change Password' : 'Set Password');
         this.$protectedSessionTimeout.val(options.protectedSessionTimeout);
     }
 

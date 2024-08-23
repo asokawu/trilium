@@ -12,11 +12,15 @@ class NoteContext extends Component {
     constructor(ntxId = null, hoistedNoteId = 'root', mainNtxId = null) {
         super();
 
-        this.ntxId = ntxId || utils.randomString(4);
+        this.ntxId = ntxId || this.constructor.generateNtxId();
         this.hoistedNoteId = hoistedNoteId;
         this.mainNtxId = mainNtxId;
 
         this.resetViewScope();
+    }
+
+    static generateNtxId() {
+        return utils.randomString(6);
     }
 
     setEmpty() {
@@ -39,10 +43,16 @@ class NoteContext extends Component {
 
     async setNote(inputNotePath, opts = {}) {
         opts.triggerSwitchEvent = opts.triggerSwitchEvent !== undefined ? opts.triggerSwitchEvent : true;
+        opts.viewScope = opts.viewScope || {};
+        opts.viewScope.viewMode = opts.viewScope.viewMode || "default";
 
         const resolvedNotePath = await this.getResolvedNotePath(inputNotePath);
 
         if (!resolvedNotePath) {
+            return;
+        }
+
+        if (this.notePath === resolvedNotePath && utils.areObjectsEqual(this.viewScope, opts.viewScope)) {
             return;
         }
 
@@ -51,10 +61,8 @@ class NoteContext extends Component {
         utils.closeActiveDialog();
 
         this.notePath = resolvedNotePath;
-        ({noteId: this.noteId, parentNoteId: this.parentNoteId} = treeService.getNoteIdAndParentIdFromNotePath(resolvedNotePath));
-
-        this.resetViewScope();
-        this.viewScope.viewMode = opts.viewMode || "default";
+        this.viewScope = opts.viewScope;
+        ({noteId: this.noteId, parentNoteId: this.parentNoteId} = treeService.getNoteIdAndParentIdFromUrl(resolvedNotePath));
 
         this.saveToRecentNotes(resolvedNotePath);
 
@@ -77,7 +85,7 @@ class NoteContext extends Component {
     async setHoistedNoteIfNeeded() {
         if (this.hoistedNoteId === 'root'
             && this.notePath.startsWith("root/_hidden")
-            && !this.note.hasLabel("keepCurrentHoisting")
+            && !this.note.isLabelTruthy("keepCurrentHoisting")
         ) {
             // hidden subtree displays only when hoisted, so it doesn't make sense to keep root as hoisted note
 
@@ -97,11 +105,24 @@ class NoteContext extends Component {
         return appContext.tabManager.noteContexts.filter(nc => nc.ntxId === this.ntxId || nc.mainNtxId === this.ntxId);
     }
 
+    /**
+     * A main context represents a tab and also the first split. Further splits are the children contexts of the main context.
+     * Imagine you have a tab with 3 splits, each showing notes A, B, C (in this order).
+     * In such a scenario, A context is the main context (also representing the tab as a whole), and B, C are the children
+     * of context A.
+     *
+     * @returns {boolean} true if the context is main (= tab)
+     */
     isMainContext() {
-        // if null then this is a main context
+        // if null, then this is a main context
         return !this.mainNtxId;
     }
 
+    /**
+     * See docs for isMainContext() for better explanation.
+     *
+     * @returns {NoteContext}
+     */
     getMainContext() {
         if (this.mainNtxId) {
             try {
@@ -119,7 +140,7 @@ class NoteContext extends Component {
 
     saveToRecentNotes(resolvedNotePath) {
         setTimeout(async () => {
-            // we include the note into recent list only if the user stayed on the note at least 5 seconds
+            // we include the note in the recent list only if the user stayed on the note at least 5 seconds
             if (resolvedNotePath && resolvedNotePath === this.notePath) {
                 await server.post('recent-notes', {
                     noteId: this.note.noteId,
@@ -137,10 +158,6 @@ class NoteContext extends Component {
             return;
         }
 
-        if (resolvedNotePath === this.notePath) {
-            return;
-        }
-
         if (await hoistedNoteService.checkNoteAccess(resolvedNotePath, this) === false) {
             return; // note is outside of hoisted subtree and user chose not to unhoist
         }
@@ -148,7 +165,7 @@ class NoteContext extends Component {
         return resolvedNotePath;
     }
 
-    /** @property {FNote} */
+    /** @returns {FNote} */
     get note() {
         if (!this.noteId || !(this.noteId in froca.notes)) {
             return null;
@@ -157,25 +174,16 @@ class NoteContext extends Component {
         return froca.notes[this.noteId];
     }
 
-    /** @property {string[]} */
+    /** @returns {string[]} */
     get notePathArray() {
         return this.notePath ? this.notePath.split('/') : [];
-    }
-
-    /** @returns {FNoteComplement} */
-    async getNoteComplement() {
-        if (!this.noteId) {
-            return null;
-        }
-
-        return await froca.getNoteComplement(this.noteId);
     }
 
     isActive() {
         return appContext.tabManager.activeNtxId === this.ntxId;
     }
 
-    getTabState() {
+    getPojoState() {
         if (this.hoistedNoteId !== 'root') {
             // keeping empty hoisted tab is esp. important for mobile (e.g. opened launcher config)
 
@@ -190,7 +198,7 @@ class NoteContext extends Component {
             notePath: this.notePath,
             hoistedNoteId: this.hoistedNoteId,
             active: this.isActive(),
-            viewMode: this.viewScope.viewMode
+            viewScope: this.viewScope
         }
     }
 
@@ -215,6 +223,7 @@ class NoteContext extends Component {
         });
     }
 
+    /** @returns {Promise<boolean>} */
     async isReadOnly() {
         if (this.viewScope.readOnlyTemporarilyDisabled) {
             return false;
@@ -225,7 +234,7 @@ class NoteContext extends Component {
             return false;
         }
 
-        if (this.note.hasLabel('readOnly')) {
+        if (this.note.isLabelTruthy('readOnly')) {
             return true;
         }
 
@@ -233,22 +242,21 @@ class NoteContext extends Component {
             return true;
         }
 
-        const noteComplement = await this.getNoteComplement();
+        const blob = await this.note.getBlob();
 
         const sizeLimit = this.note.type === 'text'
             ? options.getInt('autoReadonlySizeText')
             : options.getInt('autoReadonlySizeCode');
 
-        return noteComplement.content
-            && noteComplement.content.length > sizeLimit
-            && !this.note.hasLabel('autoReadOnlyDisabled');
+        return blob.contentLength > sizeLimit
+            && !this.note.isLabelTruthy('autoReadOnlyDisabled');
     }
 
     async entitiesReloadedEvent({loadResults}) {
         if (loadResults.isNoteReloaded(this.noteId)) {
-            const note = loadResults.getEntity('notes', this.noteId);
+            const noteRow = loadResults.getEntityRow('notes', this.noteId);
 
-            if (note.isDeleted) {
+            if (noteRow.isDeleted) {
                 this.noteId = null;
                 this.notePath = null;
 
@@ -266,43 +274,73 @@ class NoteContext extends Component {
             && this.note.hasChildren()
             && ['book', 'text', 'code'].includes(this.note.type)
             && this.note.mime !== 'text/x-sqlite;schema=trilium'
-            && !this.note.hasLabel('hideChildrenOverview');
+            && !this.note.isLabelTruthy('hideChildrenOverview');
     }
 
     async getTextEditor(callback) {
-        return new Promise(resolve => appContext.triggerCommand('executeWithTextEditor', {
+        return this.timeout(new Promise(resolve => appContext.triggerCommand('executeWithTextEditor', {
             callback,
             resolve,
             ntxId: this.ntxId
-        }));
+        })));
     }
 
     async getCodeEditor() {
-        return new Promise(resolve => appContext.triggerCommand('executeWithCodeEditor', {
+        return this.timeout(new Promise(resolve => appContext.triggerCommand('executeWithCodeEditor', {
             resolve,
             ntxId: this.ntxId
-        }));
+        })));
     }
 
     async getContentElement() {
-        return new Promise(resolve => appContext.triggerCommand('executeWithContentElement', {
+        return this.timeout(new Promise(resolve => appContext.triggerCommand('executeWithContentElement', {
             resolve,
             ntxId: this.ntxId
-        }));
+        })));
     }
 
     async getTypeWidget() {
-        return new Promise(resolve => appContext.triggerCommand('executeWithTypeWidget', {
+        return this.timeout(new Promise(resolve => appContext.triggerCommand('executeWithTypeWidget', {
             resolve,
             ntxId: this.ntxId
-        }));
+        })));
+    }
+
+    timeout(promise) {
+        return Promise.race([
+            promise,
+            new Promise(res => setTimeout(() => res(null), 200))
+        ]);
     }
 
     resetViewScope() {
         // view scope contains data specific to one note context and one "view".
-        // it is used to e.g. make read-only note temporarily editable or to hide TOC
+        // it is used to e.g., make read-only note temporarily editable or to hide TOC
         // this is reset after navigating to a different note
         this.viewScope = {};
+    }
+
+    async getNavigationTitle() {
+        if (!this.note) {
+            return null;
+        }
+
+        const { note, viewScope } = this;
+
+        let title = viewScope.viewMode === 'default'
+            ? note.title
+            : `${note.title}: ${viewScope.viewMode}`;
+
+        if (viewScope.attachmentId) {
+            // assuming the attachment has been already loaded
+            const attachment = await note.getAttachmentById(viewScope.attachmentId);
+
+            if (attachment) {
+                title += `: ${attachment.title}`;
+            }
+        }
+
+        return title;
     }
 }
 

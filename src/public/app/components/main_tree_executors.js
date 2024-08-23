@@ -5,7 +5,7 @@ import hoistedNoteService from "../services/hoisted_note.js";
 import Component from "./component.js";
 
 /**
- * This class contains command executors which logically belong to the NoteTree widget, but for better user experience
+ * This class contains command executors which logically belong to the NoteTree widget, but for better user experience,
  * the keyboard shortcuts must be active on the whole screen and not just on the widget itself, so the executors
  * must be at the root of the component tree.
  */
@@ -47,7 +47,7 @@ export default class MainTreeExecutors extends Component {
         }
 
         const parentNotePath = treeService.getNotePath(node.getParent());
-        const isProtected = await treeService.getParentProtectedStatus(node);
+        const isProtected = treeService.getParentProtectedStatus(node);
 
         if (node.data.noteId === 'root' || node.data.noteId === hoistedNoteService.getHoistedNoteId()) {
             return;

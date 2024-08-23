@@ -29,7 +29,7 @@ export default class HistoryNavigationButton extends ButtonFromNoteWidget {
 
         this.webContents = utils.dynamicRequire('@electron/remote').getCurrentWebContents();
 
-        // without this the history is preserved across frontend reloads
+        // without this, the history is preserved across frontend reloads
         this.webContents.clearHistory();
 
         this.refresh();
@@ -55,6 +55,7 @@ export default class HistoryNavigationButton extends ButtonFromNoteWidget {
         for (const idx in this.webContents.history) {
             const url = this.webContents.history[idx];
             const [_, notePathWithTab] = url.split('#');
+            // broken: use linkService.parseNavigationStateFromUrl();
             const [notePath, ntxId] = notePathWithTab.split('-');
 
             const title = await treeService.getNotePathTitle(notePath);
@@ -86,7 +87,7 @@ export default class HistoryNavigationButton extends ButtonFromNoteWidget {
             return;
         }
 
-        // disabling this because in electron 9 there's weird performance problem which makes these webContents calls
+        // disabling this because in electron 9 there's a weird performance problem which makes these webContents calls
         // block UI thread for > 1 second on specific notes (book notes displaying underlying render notes with scripts)
 
         // this.$backInHistory.toggleClass('disabled', !this.webContents.canGoBack());

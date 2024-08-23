@@ -11,7 +11,10 @@ span.fancytree-node.fancytree-hide {
 }
 
 .fancytree-title {
-    flex: auto;
+    flex-basis: 0; /* to allow shrinking text to make space for buttons */
+    flex-shrink: 1;
+    flex-grow: 1;
+    overflow: hidden;
     margin-left: 7px;
     outline: none;
     position: relative;
@@ -62,10 +65,7 @@ span.fancytree-node.fancytree-hide {
     display: inline-block;
     width: 16px;
     height: 16px;
-    margin-left: 5px;
-    margin-right: 8px;
-    margin-top: 4px;
-    margin-bottom: 2px;
+    margin: 4px 8px 2px 5px;
 }
 
 .fancytree-loading span.fancytree-expander:after {
@@ -135,8 +135,16 @@ span.fancytree-node.protected > span.fancytree-custom-icon {
     filter: drop-shadow(2px 2px 2px var(--main-text-color));
 }
 
+span.fancytree-node.multiple-parents.shared .fancytree-title::after {
+    font-family: 'boxicons' !important;
+    font-size: smaller;
+    content: " \ec27  \ec03";
+}
+
 span.fancytree-node.multiple-parents .fancytree-title::after {
-    content: " *";
+    font-family: 'boxicons' !important;
+    font-size: smaller;
+    content: " \ec27"; /* lookup code for "star" in boxicons.css */
 }
 
 span.fancytree-node.shared .fancytree-title::after {

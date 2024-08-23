@@ -1,20 +1,27 @@
-const sql = require('./sql');
-const dateUtils = require('./date_utils');
-const log = require('./log');
-const cls = require('./cls');
-const utils = require('./utils');
-const instanceId = require('./member_id');
-const becca = require("../becca/becca");
+const sql = require('./sql.js');
+const dateUtils = require('./date_utils.js');
+const log = require('./log.js');
+const cls = require('./cls.js');
+const utils = require('./utils.js');
+const instanceId = require('./instance_id.js');
+const becca = require('../becca/becca.js');
+const blobService = require('../services/blob.js');
 
 let maxEntityChangeId = 0;
 
-function addEntityChangeWithInstanceId(origEntityChange, instanceId) {
+function putEntityChangeWithInstanceId(origEntityChange, instanceId) {
     const ec = {...origEntityChange, instanceId};
 
-    return addEntityChange(ec);
+    putEntityChange(ec);
 }
 
-function addEntityChange(origEntityChange) {
+function putEntityChangeWithForcedChange(origEntityChange) {
+    const ec = {...origEntityChange, changeId: null};
+
+    putEntityChange(ec);
+}
+
+function putEntityChange(origEntityChange) {
     const ec = {...origEntityChange};
 
     delete ec.id;
@@ -31,11 +38,11 @@ function addEntityChange(origEntityChange) {
 
     maxEntityChangeId = Math.max(maxEntityChangeId, ec.id);
 
-    cls.addEntityChange(ec);
+    cls.putEntityChange(ec);
 }
 
-function addNoteReorderingEntityChange(parentNoteId, componentId) {
-    addEntityChange({
+function putNoteReorderingEntityChange(parentNoteId, componentId) {
+    putEntityChange({
         entityName: "note_reordering",
         entityId: parentNoteId,
         hash: 'N/A',
@@ -46,7 +53,7 @@ function addNoteReorderingEntityChange(parentNoteId, componentId) {
         instanceId
     });
 
-    const eventService = require('./events');
+    const eventService = require('./events.js');
 
     eventService.emit(eventService.ENTITY_CHANGED, {
         entityName: 'note_reordering',
@@ -54,24 +61,48 @@ function addNoteReorderingEntityChange(parentNoteId, componentId) {
     });
 }
 
-function moveEntityChangeToTop(entityName, entityId) {
-    const ec = sql.getRow(`SELECT * FROM entity_changes WHERE entityName = ? AND entityId = ?`, [entityName, entityId]);
-
-    addEntityChange(ec);
+function putEntityChangeForOtherInstances(ec) {
+    putEntityChange({
+        ...ec,
+        changeId: null,
+        instanceId: null
+    });
 }
 
 function addEntityChangesForSector(entityName, sector) {
-    const startTime = Date.now();
-
     const entityChanges = sql.getRows(`SELECT * FROM entity_changes WHERE entityName = ? AND SUBSTR(entityId, 1, 1) = ?`, [entityName, sector]);
 
+    let entitiesInserted = entityChanges.length;
+
     sql.transactional(() => {
+        if (entityName === 'blobs') {
+            entitiesInserted += addEntityChangesForDependingEntity(sector, 'notes', 'noteId');
+            entitiesInserted += addEntityChangesForDependingEntity(sector, 'attachments', 'attachmentId');
+            entitiesInserted += addEntityChangesForDependingEntity(sector, 'revisions', 'revisionId');
+        }
+
         for (const ec of entityChanges) {
-            addEntityChange(ec);
+            putEntityChangeWithForcedChange(ec);
         }
     });
 
-    log.info(`Added sector ${sector} of '${entityName}' to sync queue in ${Date.now() - startTime}ms.`);
+    log.info(`Added sector ${sector} of '${entityName}' (${entitiesInserted} entities) to the sync queue.`);
+}
+
+function addEntityChangesForDependingEntity(sector, tableName, primaryKeyColumn) {
+    // problem in blobs might be caused by problem in entity referencing the blob
+    const dependingEntityChanges = sql.getRows(`
+                SELECT dep_change.* 
+                FROM entity_changes orig_sector
+                JOIN ${tableName} ON ${tableName}.blobId = orig_sector.entityId
+                JOIN entity_changes dep_change ON dep_change.entityName = '${tableName}' AND dep_change.entityId = ${tableName}.${primaryKeyColumn}
+                WHERE orig_sector.entityName = 'blobs' AND SUBSTR(orig_sector.entityId, 1, 1) = ?`, [sector]);
+
+    for (const ec of dependingEntityChanges) {
+        putEntityChangeWithForcedChange(ec);
+    }
+
+    return dependingEntityChanges.length;
 }
 
 function cleanupEntityChangesForMissingEntities(entityName, entityPrimaryKey) {
@@ -88,56 +119,53 @@ function fillEntityChanges(entityName, entityPrimaryKey, condition = '') {
     cleanupEntityChangesForMissingEntities(entityName, entityPrimaryKey);
 
     sql.transactional(() => {
-        const entityIds = sql.getColumn(`SELECT ${entityPrimaryKey} FROM ${entityName}`
-            + (condition ? ` WHERE ${condition}` : ''));
+        const entityIds = sql.getColumn(`SELECT ${entityPrimaryKey} FROM ${entityName} ${condition}`);
 
         let createdCount = 0;
 
         for (const entityId of entityIds) {
             const existingRows = sql.getValue("SELECT COUNT(1) FROM entity_changes WHERE entityName = ? AND entityId = ?", [entityName, entityId]);
 
-            // we don't want to replace existing entities (which would effectively cause full resync)
-            if (existingRows === 0) {
-                createdCount++;
-
-                let hash;
-                let utcDateChanged;
-                let isSynced;
-
-                if (entityName.endsWith("_contents")) {
-                    // FIXME: hacky, not sure if it might cause some problems
-                    hash = "fake value";
-                    utcDateChanged = dateUtils.utcNowDateTime();
-                    isSynced = true; // contents are always synced
-                } else {
-                    const entity = becca.getEntity(entityName, entityId);
-
-                    if (entity) {
-                        hash = entity?.generateHash() || "|deleted";
-                        utcDateChanged = entity?.getUtcDateChanged() || dateUtils.utcNowDateTime();
-                        isSynced = entityName !== 'options' || !!entity?.isSynced;
-                    } else {
-                        // entity might be null (not present in becca) when it's deleted
-                        // FIXME: hacky, not sure if it might cause some problems
-                        hash = "deleted";
-                        utcDateChanged = dateUtils.utcNowDateTime();
-                        isSynced = true; // deletable (the ones with isDeleted) entities are synced
-                    }
-                }
-
-                addEntityChange({
-                    entityName,
-                    entityId,
-                    hash: hash,
-                    isErased: false,
-                    utcDateChanged: utcDateChanged,
-                    isSynced: isSynced
-                });
+            if (existingRows !== 0) {
+                // we don't want to replace existing entities (which would effectively cause full resync)
+                continue;
             }
+
+            createdCount++;
+
+            const ec = {
+                entityName,
+                entityId,
+                isErased: false
+            };
+
+            if (entityName === 'blobs') {
+                const blob = sql.getRow("SELECT blobId, content, utcDateModified FROM blobs WHERE blobId = ?", [entityId]);
+                ec.hash = blobService.calculateContentHash(blob);
+                ec.utcDateChanged = blob.utcDateModified;
+                ec.isSynced = true; // blobs are always synced
+            } else {
+                const entity = becca.getEntity(entityName, entityId);
+
+                if (entity) {
+                    ec.hash = entity.generateHash();
+                    ec.utcDateChanged = entity.getUtcDateChanged() || dateUtils.utcNowDateTime();
+                    ec.isSynced = entityName !== 'options' || !!entity.isSynced;
+                } else {
+                    // entity might be null (not present in becca) when it's deleted
+                    // this will produce different hash value than when entity is being deleted since then
+                    // all normal hashed attributes are being used. Sync should recover from that, though.
+                    ec.hash = "deleted";
+                    ec.utcDateChanged = dateUtils.utcNowDateTime();
+                    ec.isSynced = true; // deletable (the ones with isDeleted) entities are synced
+                }
+            }
+
+            putEntityChange(ec);
         }
 
         if (createdCount > 0) {
-            log.info(`Created ${createdCount} missing entity changes for ${entityName}.`);
+            log.info(`Created ${createdCount} missing entity changes for entity '${entityName}'.`);
         }
     });
 }
@@ -147,13 +175,13 @@ function fillAllEntityChanges() {
         sql.execute("DELETE FROM entity_changes WHERE isErased = 0");
 
         fillEntityChanges("notes", "noteId");
-        fillEntityChanges("note_contents", "noteId");
         fillEntityChanges("branches", "branchId");
-        fillEntityChanges("note_revisions", "noteRevisionId");
-        fillEntityChanges("note_revision_contents", "noteRevisionId");
+        fillEntityChanges("revisions", "revisionId");
+        fillEntityChanges("attachments", "attachmentId");
+        fillEntityChanges("blobs", "blobId");
         fillEntityChanges("attributes", "attributeId");
         fillEntityChanges("etapi_tokens", "etapiTokenId");
-        fillEntityChanges("options", "name", 'isSynced = 1');
+        fillEntityChanges("options", "name", 'WHERE isSynced = 1');
     });
 }
 
@@ -162,10 +190,11 @@ function recalculateMaxEntityChangeId() {
 }
 
 module.exports = {
-    addNoteReorderingEntityChange,
-    moveEntityChangeToTop,
-    addEntityChange,
-    addEntityChangeWithInstanceId,
+    putNoteReorderingEntityChange,
+    putEntityChangeForOtherInstances,
+    putEntityChangeWithForcedChange,
+    putEntityChange,
+    putEntityChangeWithInstanceId,
     fillAllEntityChanges,
     addEntityChangesForSector,
     getMaxEntityChangeId: () => maxEntityChangeId,

@@ -1,42 +1,33 @@
 "use strict";
 
-const noteService = require('../../services/notes');
-const treeService = require('../../services/tree');
-const sql = require('../../services/sql');
-const utils = require('../../services/utils');
-const log = require('../../services/log');
-const TaskContext = require('../../services/task_context');
-const fs = require('fs');
-const becca = require("../../becca/becca");
-const ValidationError = require("../../errors/validation_error");
-const NotFoundError = require("../../errors/not_found_error");
+const noteService = require('../../services/notes.js');
+const eraseService = require('../../services/erase.js');
+const treeService = require('../../services/tree.js');
+const sql = require('../../services/sql.js');
+const utils = require('../../services/utils.js');
+const log = require('../../services/log.js');
+const TaskContext = require('../../services/task_context.js');
+const becca = require('../../becca/becca.js');
+const ValidationError = require('../../errors/validation_error.js');
+const blobService = require('../../services/blob.js');
 
 function getNote(req) {
-    const noteId = req.params.noteId;
-    const note = becca.getNote(noteId);
+    return becca.getNoteOrThrow(req.params.noteId);
+}
 
-    if (!note) {
-        throw new NotFoundError(`Note '${noteId}' has not been found.`);
-    }
+function getNoteBlob(req) {
+    return blobService.getBlobPojo('notes', req.params.noteId);
+}
 
-    const pojo = note.getPojo();
+function getNoteMetadata(req) {
+    const note = becca.getNoteOrThrow(req.params.noteId);
 
-    if (note.isStringNote()) {
-        pojo.content = note.getContent();
-
-        if (note.type === 'file' && pojo.content.length > 10000) {
-            pojo.content = `${pojo.content.substr(0, 10000)}\r\n\r\n... and ${pojo.content.length - 10000} more characters.`;
-        }
-    }
-
-    const contentMetadata = note.getContentMetadata();
-
-    pojo.contentLength = contentMetadata.contentLength;
-
-    pojo.combinedUtcDateModified = note.utcDateModified > contentMetadata.utcDateModified ? note.utcDateModified : contentMetadata.utcDateModified;
-    pojo.combinedDateModified = note.utcDateModified > contentMetadata.utcDateModified ? note.dateModified : contentMetadata.dateModified;
-
-    return pojo;
+    return {
+        dateCreated: note.dateCreated,
+        utcDateCreated: note.utcDateCreated,
+        dateModified: note.dateModified,
+        utcDateModified: note.utcDateModified,
+    };
 }
 
 function createNote(req) {
@@ -54,10 +45,10 @@ function createNote(req) {
 }
 
 function updateNoteData(req) {
-    const {content} = req.body;
+    const {content, attachments} = req.body;
     const {noteId} = req.params;
 
-    return noteService.updateNoteData(noteId, content);
+    return noteService.updateNoteData(noteId, content, attachments);
 }
 
 function deleteNote(req) {
@@ -71,12 +62,12 @@ function deleteNote(req) {
 
     const note = becca.getNote(noteId);
 
-    const taskContext = TaskContext.getInstance(taskId, 'delete-notes');
+    const taskContext = TaskContext.getInstance(taskId, 'deleteNotes');
 
     note.deleteNote(deleteId, taskContext);
 
     if (eraseNotes) {
-        noteService.eraseNotesWithDeleteId(deleteId);
+        eraseService.eraseNotesWithDeleteId(deleteId);
     }
 
     if (last) {
@@ -127,78 +118,11 @@ function setNoteTypeMime(req) {
     note.save();
 }
 
-function getRelationMap(req) {
-    const {relationMapNoteId, noteIds} = req.body;
-
-    const resp = {
-        // noteId => title
-        noteTitles: {},
-        relations: [],
-        // relation name => inverse relation name
-        inverseRelations: {
-            'internalLink': 'internalLink'
-        }
-    };
-
-    if (noteIds.length === 0) {
-        return resp;
-    }
-
-    const questionMarks = noteIds.map(noteId => '?').join(',');
-
-    const relationMapNote = becca.getNote(relationMapNoteId);
-
-    const displayRelationsVal = relationMapNote.getLabelValue('displayRelations');
-    const displayRelations = !displayRelationsVal ? [] : displayRelationsVal
-        .split(",")
-        .map(token => token.trim());
-
-    const hideRelationsVal = relationMapNote.getLabelValue('hideRelations');
-    const hideRelations = !hideRelationsVal ? [] : hideRelationsVal
-        .split(",")
-        .map(token => token.trim());
-
-    const foundNoteIds = sql.getColumn(`SELECT noteId FROM notes WHERE isDeleted = 0 AND noteId IN (${questionMarks})`, noteIds);
-    const notes = becca.getNotes(foundNoteIds);
-
-    for (const note of notes) {
-        resp.noteTitles[note.noteId] = note.title;
-
-        resp.relations = resp.relations.concat(note.getRelations()
-            .filter(relation => !relation.isAutoLink() || displayRelations.includes(relation.name))
-            .filter(relation => displayRelations.length > 0
-                ? displayRelations.includes(relation.name)
-                : !hideRelations.includes(relation.name))
-            .filter(relation => noteIds.includes(relation.value))
-            .map(relation => ({
-                attributeId: relation.attributeId,
-                sourceNoteId: relation.noteId,
-                targetNoteId: relation.value,
-                name: relation.name
-            })));
-
-        for (const relationDefinition of note.getRelationDefinitions()) {
-            const def = relationDefinition.getDefinition();
-
-            if (def.inverseRelation) {
-                resp.inverseRelations[relationDefinition.getDefinedName()] = def.inverseRelation;
-                resp.inverseRelations[def.inverseRelation] = relationDefinition.getDefinedName();
-            }
-        }
-    }
-
-    return resp;
-}
-
 function changeTitle(req) {
     const noteId = req.params.noteId;
     const title = req.body.title;
 
-    const note = becca.getNote(noteId);
-
-    if (!note) {
-        throw new NotFoundError(`Note '${noteId}' has not been found`);
-    }
+    const note = becca.getNoteOrThrow(noteId);
 
     if (!note.isContentAvailable()) {
         throw new ValidationError(`Note '${noteId}' is not available for change`);
@@ -207,7 +131,7 @@ function changeTitle(req) {
     const noteTitleChanged = note.title !== title;
 
     if (noteTitleChanged) {
-        noteService.saveNoteRevisionIfNeeded(note);
+        noteService.saveRevisionIfNeeded(note);
     }
 
     note.title = title;
@@ -228,7 +152,11 @@ function duplicateSubtree(req) {
 }
 
 function eraseDeletedNotesNow() {
-    noteService.eraseDeletedNotesNow();
+    eraseService.eraseDeletedNotesNow();
+}
+
+function eraseUnusedAttachmentsNow() {
+    eraseService.eraseUnusedAttachmentsNow();
 }
 
 function getDeleteNotesPreview(req) {
@@ -273,6 +201,7 @@ function getDeleteNotesPreview(req) {
     if (noteIdsToBeDeleted.size > 0) {
         sql.fillParamList(noteIdsToBeDeleted);
 
+        // FIXME: No need to do this in database, can be done with becca data
         brokenRelations = sql.getRows(`
             SELECT attr.noteId, attr.name, attr.value
             FROM attributes attr
@@ -287,46 +216,30 @@ function getDeleteNotesPreview(req) {
     };
 }
 
-function uploadModifiedFile(req) {
-    const noteId = req.params.noteId;
-    const {filePath} = req.body;
-
-    const note = becca.getNote(noteId);
-
-    if (!note) {
-        throw new NotFoundError(`Note '${noteId}' has not been found`);
-    }
-
-    log.info(`Updating note '${noteId}' with content from ${filePath}`);
-
-    note.saveNoteRevision();
-
-    const fileContent = fs.readFileSync(filePath);
-
-    if (!fileContent) {
-        throw new ValidationError(`File '${fileContent}' is empty`);
-    }
-
-    note.setContent(fileContent);
-}
-
-function forceSaveNoteRevision(req) {
+function forceSaveRevision(req) {
     const {noteId} = req.params;
-    const note = becca.getNote(noteId);
-
-    if (!note) {
-        throw new NotFoundError(`Note '${noteId}' not found.`);
-    }
+    const note = becca.getNoteOrThrow(noteId);
 
     if (!note.isContentAvailable()) {
         throw new ValidationError(`Note revision of a protected note cannot be created outside of a protected session.`);
     }
 
-    note.saveNoteRevision();
+    note.saveRevision();
+}
+
+function convertNoteToAttachment(req) {
+    const {noteId} = req.params;
+    const note = becca.getNoteOrThrow(noteId);
+
+    return {
+        attachment: note.convertToParentAttachment()
+    };
 }
 
 module.exports = {
     getNote,
+    getNoteBlob,
+    getNoteMetadata,
     updateNoteData,
     deleteNote,
     undeleteNote,
@@ -334,11 +247,11 @@ module.exports = {
     sortChildNotes,
     protectNote,
     setNoteTypeMime,
-    getRelationMap,
     changeTitle,
     duplicateSubtree,
     eraseDeletedNotesNow,
+    eraseUnusedAttachmentsNow,
     getDeleteNotesPreview,
-    uploadModifiedFile,
-    forceSaveNoteRevision
+    forceSaveRevision,
+    convertNoteToAttachment
 };

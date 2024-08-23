@@ -14,7 +14,9 @@ class Shaca {
         this.childParentToBranch = {};
         /** @type {Object.<String, SAttribute>} */
         this.attributes = {};
-        /** @type {Object.<String, String>} */
+        /** @type {Object.<String, SAttachment>} */
+        this.attachments = {};
+        /** @type {Object.<String, SNote>} */
         this.aliasToNote = {};
 
         /** @type {SNote|null} */
@@ -70,6 +72,11 @@ class Shaca {
     /** @returns {SAttribute|null} */
     getAttribute(attributeId) {
         return this.attributes[attributeId];
+    }
+
+    /** @returns {SAttachment|null} */
+    getAttachment(attachmentId) {
+        return this.attachments[attachmentId];
     }
 
     getEntity(entityName, entityId) {

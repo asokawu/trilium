@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
     <meta name="theme-color" content="#fff">
     <title>Trilium Notes</title>
-    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="manifest" crossorigin="use-credentials" href="manifest.webmanifest">
 
     <style>
         .lds-roller {
@@ -105,9 +105,9 @@
 <script type="text/javascript">
     global = globalThis; /* fixes https://github.com/webpack/webpack/issues/10035 */
 
-    window.baseApiUrl = 'api/';
-    window.device = "mobile";
     window.glob = {
+        device: "mobile",
+        baseApiUrl: 'api/',
         activeDialog: null,
         maxEntityChangeIdAtLoad: <%= maxEntityChangeIdAtLoad %>,
         maxEntityChangeSyncIdAtLoad: <%= maxEntityChangeSyncIdAtLoad %>,
@@ -123,9 +123,9 @@
     };
 </script>
 
-<script src="<%= assetPath %>/libraries/jquery.min.js"></script>
+<script src="<%= assetPath %>/node_modules/jquery/dist/jquery.min.js"></script>
 
-<script src="<%= assetPath %>/libraries/dayjs.min.js"></script>
+<script src="<%= assetPath %>/node_modules/dayjs/dayjs.min.js"></script>
 
 <link href="<%= assetPath %>/stylesheets/tree.css" rel="stylesheet">
 <script src="<%= assetPath %>/libraries/fancytree/jquery.fancytree-all-deps.min.js"></script>
@@ -143,7 +143,7 @@
 <% } %>
 <link href="<%= assetPath %>/stylesheets/style.css" rel="stylesheet">
 
-<link rel="stylesheet" type="text/css" href="<%= assetPath %>/libraries/boxicons/css/boxicons.min.css">
+<link rel="stylesheet" type="text/css" href="<%= assetPath %>/node_modules/boxicons/css/boxicons.min.css">
 
 </body>
 </html>

@@ -2,14 +2,14 @@
  * Table of contents widget
  * (c) Antonio Tejada 2022
  *
- * By design there's no support for nonsensical or malformed constructs:
+ * By design, there's no support for nonsensical or malformed constructs:
  * - headings inside elements (e.g. Trilium allows headings inside tables, but
  *   not inside lists)
  * - nested headings when using raw HTML <H2><H3></H3></H2>
  * - malformed headings when using raw HTML <H2></H3></H2><H3>
  * - etc.
  *
- * In those cases the generated TOC may be incorrect or the navigation may lead
+ * In those cases, the generated TOC may be incorrect, or the navigation may lead
  * to the wrong heading (although what "right" means in those cases is not
  * clear), but it won't crash.
  */
@@ -18,6 +18,7 @@ import attributeService from "../services/attributes.js";
 import RightPanelWidget from "./right_panel_widget.js";
 import options from "../services/options.js";
 import OnClickButtonWidget from "./buttons/onclick_button.js";
+import appContext from "../components/app_context.js";
 
 const TPL = `<div class="toc-widget">
     <style>
@@ -47,27 +48,30 @@ const TPL = `<div class="toc-widget">
         .toc li:hover {
             font-weight: bold;
         }
-        
-        .close-toc {
-            position: absolute;
-            top: 2px;
-            right: 2px;
-        }
     </style>
 
     <span class="toc"></span>
 </div>`;
 
 export default class TocWidget extends RightPanelWidget {
-    constructor() {
-        super();
-
-        this.closeTocButton = new CloseTocButton();
-        this.child(this.closeTocButton);
-    }
-
     get widgetTitle() {
         return "Table of Contents";
+    }
+
+    get widgetButtons() {
+        return [
+            new OnClickButtonWidget()
+                .icon("bx-slider")
+                .title("Options")
+                .titlePlacement("left")
+                .onClick(() => appContext.tabManager.openContextWithNote('_optionsTextNotes', {activate: true}))
+                .class("icon-action"),
+            new OnClickButtonWidget()
+                .icon("bx-x")
+                .titlePlacement("left")
+                .onClick(widget => widget.triggerCommand("closeToc"))
+                .class("icon-action")
+        ];
     }
 
     isEnabled() {
@@ -80,19 +84,14 @@ export default class TocWidget extends RightPanelWidget {
     async doRenderBody() {
         this.$body.empty().append($(TPL));
         this.$toc = this.$body.find('.toc');
-        this.$body.find('.toc-widget').append(this.closeTocButton.render());
     }
 
     async refreshWithNote(note) {
-        /*The reason for adding tocPreviousVisible is to record whether the previous state of the toc is hidden or displayed, 
-        * and then let it be displayed/hidden at the initial time. If there is no such value, 
-        * when the right panel needs to display highlighttext but not toc, every time the note content is changed, 
+        /*The reason for adding tocPreviousVisible is to record whether the previous state of the toc is hidden or displayed,
+        * and then let it be displayed/hidden at the initial time. If there is no such value,
+        * when the right panel needs to display highlighttext but not toc, every time the note content is changed,
         * toc will appear and then close immediately, because getToc(html) function will consume time*/
-        if (this.noteContext.viewScope.tocPreviousVisible ==true){
-            this.toggleInt(true);
-        }else{
-            this.toggleInt(false);
-        }
+        this.toggleInt(!!this.noteContext.viewScope.tocPreviousVisible);
 
         const tocLabel = note.getLabel('toc');
 
@@ -105,17 +104,17 @@ export default class TocWidget extends RightPanelWidget {
         let $toc = "", headingCount = 0;
         // Check for type text unconditionally in case alwaysShowWidget is set
         if (this.note.type === 'text') {
-            const { content } = await note.getNoteComplement();
+            const { content } = await note.getBlob();
             ({$toc, headingCount} = await this.getToc(content));
         }
 
         this.$toc.html($toc);
         if (["", "show"].includes(tocLabel?.value) || headingCount >= options.getInt('minTocHeadings')){
             this.toggleInt(true);
-            this.noteContext.viewScope.tocPreviousVisible=true;  
+            this.noteContext.viewScope.tocPreviousVisible=true;
         }else{
             this.toggleInt(false);
-            this.noteContext.viewScope.tocPreviousVisible=false;  
+            this.noteContext.viewScope.tocPreviousVisible=false;
         }
 
         this.triggerCommand("reEvaluateRightPaneVisibility");
@@ -124,7 +123,7 @@ export default class TocWidget extends RightPanelWidget {
     /**
      * Builds a jquery table of contents.
      *
-     * @param {String} html Note's html content
+     * @param {string} html Note's html content
      * @returns {$toc: jQuery, headingCount: integer} ordered list table of headings, nested by heading level
      *         with an onclick event that will cause the document to scroll to
      *         the desired position.
@@ -137,7 +136,7 @@ export default class TocWidget extends RightPanelWidget {
         // Use jquery to build the table rather than html text, since it makes
         // it easier to set the onclick event that will be executed with the
         // right captured callback context
-        const $toc = $("<ol>");
+        let $toc = $("<ol>");
         // Note heading 2 is the first level Trilium makes available to the note
         let curLevel = 2;
         const $ols = [$toc];
@@ -175,10 +174,34 @@ export default class TocWidget extends RightPanelWidget {
             headingCount = headingIndex;
         }
 
+        $toc = this.pullLeft($toc);
+
         return {
             $toc,
             headingCount
         };
+    }
+
+    /**
+     * Reduce indent if a larger headings are not being used: https://github.com/zadam/trilium/issues/4363
+     */
+    pullLeft($toc) {
+        while (true) {
+            const $children = $toc.children();
+
+            if ($children.length !== 1) {
+                break;
+            }
+
+            const $first = $toc.children(":first");
+
+            if ($first[0].tagName !== 'OL') {
+                break;
+            }
+
+            $toc = $first;
+        }
+        return $toc;
     }
 
     async jumpToHeading(headingIndex) {
@@ -189,32 +212,16 @@ export default class TocWidget extends RightPanelWidget {
         // See https://github.com/zadam/trilium/issues/2828
         const isReadOnly = await this.noteContext.isReadOnly();
 
+        let $container;
         if (isReadOnly) {
-            const $container = await this.noteContext.getContentElement();
-            const headingElement = $container.find(":header:not(section.include-note :header)")[headingIndex];
-
-            if (headingElement != null) {
-                headingElement.scrollIntoView({ behavior: "smooth" });
-            }
+            $container = await this.noteContext.getContentElement();
         } else {
             const textEditor = await this.noteContext.getTextEditor();
-
-            const model = textEditor.model;
-            const doc = model.document;
-            const root = doc.getRoot();
-
-            const headingNode = findHeadingNodeByIndex(root, headingIndex);
-
-            // headingNode could be null if the html was malformed or
-            // with headings inside elements, just ignore and don't
-            // navigate (note that the TOC rendering and other TOC
-            // entries' navigation could be wrong too)
-            if (headingNode != null) {
-                $(textEditor.editing.view.domRoots.values().next().value).find(':header:not(section.include-note :header)')[headingIndex].scrollIntoView({
-                    behavior: 'smooth'
-                });
-            }
+            $container = $(textEditor.sourceElement);
         }
+
+        const headingElement = $container?.find(":header:not(section.include-note :header)")?.[headingIndex];
+        headingElement?.scrollIntoView({ behavior: "smooth" });
     }
 
     async closeTocCommand() {
@@ -226,57 +233,11 @@ export default class TocWidget extends RightPanelWidget {
     async entitiesReloadedEvent({loadResults}) {
         if (loadResults.isNoteContentReloaded(this.noteId)) {
             await this.refresh();
-        } else if (loadResults.getAttributes().find(attr => attr.type === 'label'
+        } else if (loadResults.getAttributeRows().find(attr => attr.type === 'label'
             && (attr.name.toLowerCase().includes('readonly') || attr.name === 'toc')
             && attributeService.isAffecting(attr, this.note))) {
 
             await this.refresh();
         }
-    }
-}
-
-/**
- * Find a heading node in the parent's children given its index.
- *
- * @param {Element} parent Parent node to find a headingIndex'th in.
- * @param {uint} headingIndex Index for the heading
- * @returns {Element|null} Heading node with the given index, null couldn't be
- *          found (ie malformed like nested headings, etc.)
- */
-function findHeadingNodeByIndex(parent, headingIndex) {
-    let headingNode = null;
-    for (let i = 0; i < parent.childCount; ++i) {
-        let child = parent.getChild(i);
-
-        // Headings appear as flattened top level children in the CKEditor
-        // document named as "heading" plus the level, eg "heading2",
-        // "heading3", "heading2", etc. and not nested wrt the heading level. If
-        // a heading node is found, decrement the headingIndex until zero is
-        // reached
-        if (child.name.startsWith("heading")) {
-            if (headingIndex === 0) {
-                headingNode = child;
-                break;
-            }
-            headingIndex--;
-        }
-    }
-
-    return headingNode;
-}
-
-class CloseTocButton extends OnClickButtonWidget {
-    constructor() {
-        super();
-
-        this.icon("bx-x")
-            .title("Close TOC")
-            .titlePlacement("bottom")
-            .onClick((widget, e) => {
-                e.stopPropagation();
-
-                widget.triggerCommand("closeToc");
-            })
-            .class("icon-action close-toc");
     }
 }

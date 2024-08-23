@@ -59,7 +59,7 @@ export default class EditableCodeTypeWidget extends TypeWidget {
             lineNumbers: true,
             tabindex: 300,
             // we line wrap partly also because without it horizontal scrollbar displays only when you scroll
-            // all the way to the bottom of the note. With line wrap there's no horizontal scrollbar so no problem
+            // all the way to the bottom of the note. With line wrap, there's no horizontal scrollbar so no problem
             lineWrapping: options.is('codeLineWrapEnabled'),
             dragDrop: false, // with true the editor inlines dropped files which is not what we expect
             placeholder: "Type the content of your code note here...",
@@ -69,12 +69,12 @@ export default class EditableCodeTypeWidget extends TypeWidget {
     }
 
     async doRefresh(note) {
-        const noteComplement = await this.noteContext.getNoteComplement();
+        const blob = await this.note.getBlob();
 
         await this.spacedUpdate.allowUpdateWithoutChange(() => {
-            // CodeMirror breaks pretty badly on null so even though it shouldn't happen (guarded by consistency check)
+            // CodeMirror breaks pretty badly on null, so even though it shouldn't happen (guarded by a consistency check)
             // we provide fallback
-            this.codeEditor.setValue(noteComplement.content || "");
+            this.codeEditor.setValue(blob.content || "");
             this.codeEditor.clearHistory();
 
             let info = CodeMirror.findModeByMIME(note.mime);
@@ -107,6 +107,11 @@ export default class EditableCodeTypeWidget extends TypeWidget {
 
     focus() {
         this.$editor.focus();
+        this.codeEditor.focus();
+    }
+
+    scrollToEnd() {
+        this.codeEditor.setCursor(this.codeEditor.lineCount(), 0);
         this.codeEditor.focus();
     }
 

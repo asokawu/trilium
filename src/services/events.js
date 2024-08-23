@@ -1,4 +1,4 @@
-const log = require('./log');
+const log = require('./log.js');
 
 const NOTE_TITLE_CHANGED = "NOTE_TITLE_CHANGED";
 const ENTER_PROTECTED_SESSION = "ENTER_PROTECTED_SESSION";
@@ -9,11 +9,12 @@ const ENTITY_DELETED = "ENTITY_DELETED";
 const ENTITY_CHANGE_SYNCED = "ENTITY_CHANGE_SYNCED";
 const ENTITY_DELETE_SYNCED = "ENTITY_DELETE_SYNCED";
 const CHILD_NOTE_CREATED = "CHILD_NOTE_CREATED";
+const NOTE_CONTENT_CHANGE = "NOTE_CONTENT_CHANGED";
 
 const eventListeners = {};
 
 /**
- * @param eventTypes - can be either single event or an array of events
+ * @param {string|string[]}eventTypes - can be either single event or an array of events
  * @param listener
  */
 function subscribe(eventTypes, listener) {
@@ -49,7 +50,7 @@ function emit(eventType, data) {
                 listener(data);
             }
             catch (e) {
-                log.error(`Listener threw error: ${e.stack}`);
+                log.error(`Listener threw error: ${e.message}, stack: ${e.stack}`);
                 // we won't stop execution because of listener
             }
         }
@@ -69,5 +70,6 @@ module.exports = {
     ENTITY_DELETED,
     ENTITY_CHANGE_SYNCED,
     ENTITY_DELETE_SYNCED,
-    CHILD_NOTE_CREATED
+    CHILD_NOTE_CREATED,
+    NOTE_CONTENT_CHANGE
 };

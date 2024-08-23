@@ -6,7 +6,7 @@ function parse(value) {
         if (token === 'promoted') {
             defObj.isPromoted = true;
         }
-        else if (['text', 'number', 'boolean', 'date', 'url'].includes(token)) {
+        else if (['text', 'number', 'boolean', 'date', 'datetime', 'url'].includes(token)) {
             defObj.labelType = token;
         }
         else if (['single', 'multi'].includes(token)) {
@@ -16,6 +16,11 @@ function parse(value) {
             const chunks = token.split('=');
 
             defObj.numberPrecision = parseInt(chunks[1]);
+        }
+        else if (token.startsWith('alias')) {
+            const chunks = token.split('=');
+
+            defObj.promotedAlias = chunks[1];
         }
         else if (token.startsWith('inverse')) {
             const chunks = token.split('=');

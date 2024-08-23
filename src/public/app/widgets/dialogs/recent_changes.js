@@ -16,7 +16,7 @@ const TPL = `
             <div class="modal-header">
                 <h5 class="modal-title mr-auto">Recent changes</h5>
                 
-                <button class="erase-deleted-notes-now-button btn btn-xs" style="padding: 0 10px">
+                <button class="erase-deleted-notes-now-button btn btn-sm" style="padding: 0 10px">
                     Erase deleted notes now</button>
                 
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="margin-left: 0 !important;">
@@ -110,7 +110,7 @@ export default class RecentChangesDialog extends BasicWidget {
                     const notePath = note.getBestNotePathString();
 
                     if (notePath) {
-                        $noteLink = await linkService.createNoteLink(notePath, {
+                        $noteLink = await linkService.createLink(notePath, {
                             title: change.title,
                             showNotePath: true
                         });

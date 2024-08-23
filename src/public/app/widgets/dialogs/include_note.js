@@ -92,12 +92,12 @@ export default class IncludeNoteDialog extends BasicWidget {
     }
 
     async includeNote(notePath) {
-        const noteId = treeService.getNoteIdFromNotePath(notePath);
+        const noteId = treeService.getNoteIdFromUrl(notePath);
         const note = await froca.getNote(noteId);
 
         const boxSize = $("input[name='include-note-box-size']:checked").val();
 
-        if (note.type === 'image') {
+        if (['image', 'canvas', 'mermaid'].includes(note.type)) {
             // there's no benefit to use insert note functionlity for images,
             // so we'll just add an IMG tag
             this.textTypeWidget.addImage(noteId);

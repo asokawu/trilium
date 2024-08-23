@@ -11,7 +11,7 @@ function lex(str) {
     let currentWord = '';
 
     function isSymbolAnOperator(chr) {
-        return ['=', '*', '>', '<', '!', "-", "+", '%'].includes(chr);
+        return ['=', '*', '>', '<', '!', "-", "+", '%', ','].includes(chr);
     }
 
     function isPreviousSymbolAnOperator() {
@@ -80,7 +80,7 @@ function lex(str) {
                 quotes = false;
             }
             else {
-                // it's a quote but within other kind of quotes, so it's valid as a literal character
+                // it's a quote, but within other kind of quotes, so it's valid as a literal character
                 currentWord += chr;
             }
 
@@ -126,6 +126,10 @@ function lex(str) {
                 currentWord += chr;
                 continue;
             }
+        }
+
+        if (chr === ',') {
+            continue;
         }
 
         currentWord += chr;

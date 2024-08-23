@@ -22,6 +22,7 @@ const Draggabilly = window.Draggabilly;
 
 const TAB_CONTAINER_MIN_WIDTH = 24;
 const TAB_CONTAINER_MAX_WIDTH = 240;
+const TAB_CONTAINER_LEFT_PADDING = 5;
 const NEW_TAB_WIDTH = 32;
 const MIN_FILLER_WIDTH = 50;
 const MARGIN_WIDTH = 5;
@@ -330,13 +331,13 @@ export default class TabRowWidget extends BasicWidget {
     getTabPositions() {
         const tabPositions = [];
 
-        let position = 0;
+        let position = TAB_CONTAINER_LEFT_PADDING;
         this.tabWidths.forEach(width => {
             tabPositions.push(position);
             position += width + MARGIN_WIDTH;
         });
 
-        position -= MARGIN_WIDTH; // last margin should not be applied
+        position -= MARGIN_WIDTH; // the last margin should not be applied
 
         const newTabPosition = position;
         const fillerPosition = position + 32;
@@ -517,7 +518,7 @@ export default class TabRowWidget extends BasicWidget {
 
             draggabilly.on('dragEnd', _ => {
                 this.isDragging = false;
-                const finalTranslateX = parseFloat(tabEl.style.left, 10);
+                const finalTranslateX = parseFloat(tabEl.style.left);
                 tabEl.style.transform = `translate3d(0, 0, 0)`;
 
                 // Animate dragged tab back into its place
@@ -542,7 +543,7 @@ export default class TabRowWidget extends BasicWidget {
             });
 
             draggabilly.on('dragMove', (event, pointer, moveVector) => {
-                // Current index be computed within the event since it can change during the dragMove
+                // The current index be computed within the event since it can change during the dragMove
                 const tabEls = this.tabEls;
                 const currentIndex = tabEls.indexOf(tabEl);
 
@@ -617,7 +618,16 @@ export default class TabRowWidget extends BasicWidget {
 
         // update tab id for the new main context
         this.getTabById(oldMainNtxId).attr("data-ntx-id", newMainNtxId);
-        this.updateTabById(newMainNtxId);        
+        this.updateTabById(newMainNtxId);
+    }
+
+    contextsReopenedEvent({mainNtxId, tabPosition}) {
+        if (mainNtxId === undefined || tabPosition === undefined) {
+            // no tab reopened
+            return;
+        }
+        const tabEl = this.getTabById(mainNtxId)[0];
+        tabEl.parentNode.insertBefore(tabEl, this.tabEls[tabPosition]);
     }
 
     updateTabById(ntxId) {
@@ -628,8 +638,11 @@ export default class TabRowWidget extends BasicWidget {
         this.updateTab($tab, noteContext);
     }
 
-    /** @param {NoteContext} noteContext */
-    updateTab($tab, noteContext) {
+    /**
+     * @param {jQuery} $tab
+     * @param {NoteContext} noteContext
+     */
+    async updateTab($tab, noteContext) {
         if (!$tab.length) {
             return;
         }
@@ -663,11 +676,7 @@ export default class TabRowWidget extends BasicWidget {
             return;
         }
 
-        const viewMode = noteContext.viewScope?.viewMode;
-        const title = (viewMode && viewMode !== 'default')
-            ? `${viewMode}: ${note.title}`
-            : note.title;
-
+        const title = await noteContext.getNavigationTitle();
         this.updateTitle($tab, title);
 
         $tab.addClass(note.getCssClass());
@@ -682,7 +691,7 @@ export default class TabRowWidget extends BasicWidget {
             }
 
             if (loadResults.isNoteReloaded(noteContext.noteId) ||
-                loadResults.getAttributes().find(attr =>
+                loadResults.getAttributeRows().find(attr =>
                     ['workspace', 'workspaceIconClass', 'workspaceTabBackgroundColor'].includes(attr.name)
                     && attributeService.isAffecting(attr, noteContext.note))
             ) {
