@@ -36,22 +36,28 @@ function buildDescendantCountMap(noteIdsToCount) {
 /**
  * @param {BNote} note
  * @param {int} depth
+ * @param {int} type 0: default, 1:kerel
  * @returns {string[]} noteIds
  */
-function getNeighbors(note, depth) {
+function getNeighbors(note, depth, type=0) {
     if (depth === 0) {
         return [];
     }
 
     const retNoteIds = [];
 
-    function isIgnoredRelation(relation) {
-        return ['relationMapLink', 'template', 'inherit', 'image', 'ancestor'].includes(relation.name);
+    function isIgnoredRelation(relation, type = 0) {
+        if (type === 0) {
+            return ['relationMapLink', 'template', 'inherit', 'image', 'ancestor'].includes(relation.name);
+        }
+        else if (type === 1) {
+            return ['relationMapLink', 'template', 'inherit', 'image', 'ancestor', 'internalLink'].includes(relation.name);
+        }
     }
 
     // forward links
     for (const relation of note.getRelations()) {
-        if (isIgnoredRelation(relation)) {
+        if (isIgnoredRelation(relation, type)) {
             continue;
         }
 
@@ -63,14 +69,14 @@ function getNeighbors(note, depth) {
 
         retNoteIds.push(targetNote.noteId);
 
-        for (const noteId of getNeighbors(targetNote, depth - 1)) {
+        for (const noteId of getNeighbors(targetNote, depth - 1, type)) {
             retNoteIds.push(noteId);
         }
     }
 
     // backward links
     for (const relation of note.getTargetRelations()) {
-        if (isIgnoredRelation(relation)) {
+        if (isIgnoredRelation(relation, type)) {
             continue;
         }
 
@@ -82,7 +88,7 @@ function getNeighbors(note, depth) {
 
         retNoteIds.push(sourceNote.noteId);
 
-        for (const noteId of getNeighbors(sourceNote, depth - 1)) {
+        for (const noteId of getNeighbors(sourceNote, depth - 1, type)) {
             retNoteIds.push(noteId);
         }
     }
@@ -118,7 +124,7 @@ function getKeyrelMap(req) {
         noteIds.delete(mapRootNote.noteId);
     }
 
-    for (const noteId of getNeighbors(mapRootNote, 3)) {
+    for (const noteId of getNeighbors(mapRootNote, 1, 1)) {
         noteIds.add(noteId);
     }
 
@@ -137,6 +143,9 @@ function getKeyrelMap(req) {
 
     const links = Object.values(becca.attributes).filter(rel => {
         if (rel.type !== 'relation' || rel.name === 'relationMapLink' || rel.name === 'template' || rel.name === 'inherit') {
+            return false;
+        }
+        else if (rel.name === 'internalLink') {
             return false;
         }
         else if (!noteIds.has(rel.noteId) || !noteIds.has(rel.value)) {
