@@ -9,6 +9,8 @@ COPY . .
 
 COPY server-package.json package.json
 
+RUN set -eux && sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories
+
 # Install app dependencies
 RUN set -x \
     && apk add --no-cache --virtual .build-dependencies \
@@ -21,7 +23,9 @@ RUN set -x \
         nasm \
         libpng-dev \
         python3 \
-    && npm install \
+    && npm config set proxy http://127.0.0.1:10809 \
+    && npm config set https-proxy http://127.0.0.1:10809 \
+    && npm install --verbose \
     && apk del .build-dependencies \
     && npm run webpack \
     && npm prune --omit=dev \
