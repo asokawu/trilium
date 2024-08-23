@@ -1,8 +1,8 @@
 # !!! Don't try to build this Dockerfile directly, run it through bin/build-docker.sh script !!!
 FROM node:16.19.1-alpine
 
-ENV HTTP_PROXY=http://172.17.0.1:10809
-ENV HTTPS_PROXY=http://172.17.0.1:10809
+# ENV HTTP_PROXY=http://172.17.0.1:10809
+# ENV HTTPS_PROXY=http://172.17.0.1:10809
 
 # Create app directory
 WORKDIR /usr/src/app
@@ -13,6 +13,7 @@ COPY . .
 COPY server-package.json package.json
 
 RUN set -eux && sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories
+
 
 # Install app dependencies
 RUN set -x \
