@@ -1,6 +1,9 @@
 # !!! Don't try to build this Dockerfile directly, run it through bin/build-docker.sh script !!!
 FROM node:16.19.1-alpine
 
+ENV HTTP_PROXY=http://172.17.0.1:10809
+ENV HTTPS_PROXY=http://172.17.0.1:10809
+
 # Create app directory
 WORKDIR /usr/src/app
 
