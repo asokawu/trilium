@@ -38,20 +38,25 @@ function buildDescendantCountMap(noteIdsToCount) {
  * @param {int} depth
  * @returns {string[]} noteIds
  */
-function getNeighbors(note, depth) {
+function getNeighbors(note, depth, type=0) {
     if (depth === 0) {
         return [];
     }
 
     const retNoteIds = [];
 
-    function isIgnoredRelation(relation) {
-        return ['relationMapLink', 'template', 'inherit', 'image', 'ancestor'].includes(relation.name);
+    function isIgnoredRelation(relation, type = 0) {
+        if (type === 0) {
+            return ['relationMapLink', 'template', 'inherit', 'image', 'ancestor'].includes(relation.name);
+        }
+        else if (type === 1) {
+            return ['relationMapLink', 'template', 'inherit', 'image', 'ancestor', 'internalLink'].includes(relation.name);
+        }
     }
 
     // forward links
     for (const relation of note.getRelations()) {
-        if (isIgnoredRelation(relation)) {
+        if (isIgnoredRelation(relation, type)) {
             continue;
         }
 
@@ -63,14 +68,14 @@ function getNeighbors(note, depth) {
 
         retNoteIds.push(targetNote.noteId);
 
-        for (const noteId of getNeighbors(targetNote, depth - 1)) {
+        for (const noteId of getNeighbors(targetNote, depth - 1, type)) {
             retNoteIds.push(noteId);
         }
     }
 
     // backward links
     for (const relation of note.getTargetRelations()) {
-        if (isIgnoredRelation(relation)) {
+        if (isIgnoredRelation(relation, type)) {
             continue;
         }
 
@@ -82,13 +87,93 @@ function getNeighbors(note, depth) {
 
         retNoteIds.push(sourceNote.noteId);
 
-        for (const noteId of getNeighbors(sourceNote, depth - 1)) {
+        for (const noteId of getNeighbors(sourceNote, depth - 1, type)) {
             retNoteIds.push(noteId);
         }
     }
 
     return retNoteIds;
 }
+
+
+function getKeyrelMap(req) {
+    const mapRootNote = becca.getNote(req.params.noteId);
+    // if the map root itself has exclude attribute (journal typically) then there wouldn't be anything to display, so
+    // we'll just ignore it
+    const ignoreExcludeFromNoteMap = mapRootNote.hasLabel('excludeFromNoteMap');
+    let unfilteredNotes;
+
+    if (mapRootNote.type === 'search') {
+        // for search notes we want to consider the direct search results only without the descendants
+        unfilteredNotes = mapRootNote.getSearchResultNotes();
+    } else {
+        unfilteredNotes = mapRootNote.getSubtree({
+            includeArchived: false,
+            resolveSearch: true,
+            includeHidden: mapRootNote.isInHiddenSubtree()
+        }).notes;
+    }
+
+    const noteIds = new Set(
+        unfilteredNotes
+            .filter(note => ignoreExcludeFromNoteMap || !note.hasLabel('excludeFromNoteMap'))
+            .map(note => note.noteId)
+    );
+
+    if (mapRootNote.type === 'search') {
+        noteIds.delete(mapRootNote.noteId);
+    }
+
+    for (const noteId of getNeighbors(mapRootNote, 1, 1)) {
+        noteIds.add(noteId);
+    }
+
+    const noteIdsArray = Array.from(noteIds)
+
+    const notes = noteIdsArray.map(noteId => {
+        const note = becca.getNote(noteId);
+
+        return [
+            note.noteId,
+            note.getTitleOrProtected(),
+            note.type,
+            note.getLabelValue('color')
+        ];
+    });
+
+    const links = Object.values(becca.attributes).filter(rel => {
+        if (rel.type !== 'relation' || rel.name === 'relationMapLink' || rel.name === 'template' || rel.name === 'inherit') {
+            return false;
+        }
+        else if (rel.name === 'internalLink') {
+            return false;
+        }
+        else if (!noteIds.has(rel.noteId) || !noteIds.has(rel.value)) {
+            return false;
+        }
+        else if (rel.name === 'imageLink') {
+            const parentNote = becca.getNote(rel.noteId);
+
+            return !parentNote.getChildNotes().find(childNote => childNote.noteId === rel.value);
+        }
+        else {
+            return true;
+        }
+    })
+    .map(rel => ({
+        id: `${rel.noteId}-${rel.name}-${rel.value}`,
+        sourceNoteId: rel.noteId,
+        targetNoteId: rel.value,
+        name: rel.name
+    }));
+
+    return {
+        notes: notes,
+        noteIdToDescendantCountMap: buildDescendantCountMap(noteIdsArray),
+        links: links
+    };
+}
+
 
 function getLinkMap(req) {
     const mapRootNote = becca.getNote(req.params.noteId);
@@ -382,6 +467,7 @@ function getBacklinks(req) {
 module.exports = {
     getLinkMap,
     getTreeMap,
+    getKeyrelMap,
     getBacklinkCount,
     getBacklinks
 };
