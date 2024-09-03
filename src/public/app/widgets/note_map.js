@@ -33,6 +33,7 @@ const TPL = `<div class="note-map-widget" style="position: relative;">
       <button type="button" class="btn bx bx-network-chart" title="Link Map" data-type="link"></button>
       <button type="button" class="btn bx bx-sitemap" title="Tree map" data-type="tree"></button>
       <button type="button" class="btn bx bxl-graphql" title="KeyRel" data-type="keyrel"></button>
+      <button type="button" class="btn bx bx-git-branch" title="MultiRel" data-type="multirel"></button>
     </div>
 
     <div class="style-resolver"></div>
@@ -119,7 +120,7 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
             .onNodeClick(node => appContext.tabManager.getActiveContext().setNote(node.id))
             .onNodeRightClick((node, e) => linkContextMenuService.openContextMenu(node.id, e));
 
-        if (this.mapType === 'link' || this.mapType === 'keyrel') {
+        if (this.mapType === 'link' || this.mapType === 'keyrel' || this.mapType === 'multirel') {
             this.graph
                 .linkLabel(l => `${esc(l.source.name)} - <strong>${esc(l.name)}</strong> - ${esc(l.target.name)}`)
                 .linkCanvasObject((link, ctx) => this.paintLink(link, ctx))
@@ -343,6 +344,20 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
             }
         }
         else if (this.mapType === 'keyrel') {
+            const noteIdToLinkCount = {};
+
+            for (const link of resp.links) {
+                noteIdToLinkCount[link.targetNoteId] = 1 + (noteIdToLinkCount[link.targetNoteId] || 0);
+            }
+            for (const [noteId] of resp.notes) {
+                this.noteIdToSizeMap[noteId] = 4;
+
+                if (noteId in noteIdToLinkCount) {
+                    this.noteIdToSizeMap[noteId] += Math.min(Math.pow(noteIdToLinkCount[noteId], 0.5), 15);
+                }
+            }
+        }
+        else if (this.mapType === 'multirel') {
             const noteIdToLinkCount = {};
 
             for (const link of resp.links) {

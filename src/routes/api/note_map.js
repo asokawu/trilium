@@ -33,6 +33,18 @@ function buildDescendantCountMap(noteIdsToCount) {
 
     return noteIdToCountMap;
 }
+
+
+function isIgnoredRelation(relation, type = 0) {
+    if (type === 0) {
+        return ['relationMapLink', 'template', 'inherit', 'image', 'ancestor'].includes(relation.name);
+    }
+    else if (type === 1) {
+        return ['relationMapLink', 'template', 'inherit', 'image', 'ancestor', 'internalLink'].includes(relation.name);
+    }
+}
+
+
 /**
  * @param {BNote} note
  * @param {int} depth
@@ -44,15 +56,6 @@ function getNeighbors(note, depth, type=0) {
     }
 
     const retNoteIds = [];
-
-    function isIgnoredRelation(relation, type = 0) {
-        if (type === 0) {
-            return ['relationMapLink', 'template', 'inherit', 'image', 'ancestor'].includes(relation.name);
-        }
-        else if (type === 1) {
-            return ['relationMapLink', 'template', 'inherit', 'image', 'ancestor', 'internalLink'].includes(relation.name);
-        }
-    }
 
     // forward links
     for (const relation of note.getRelations()) {
@@ -93,6 +96,117 @@ function getNeighbors(note, depth, type=0) {
     }
 
     return retNoteIds;
+}
+
+
+function getMultiRelMap(req) {
+    let ret =  {
+        notes: [],
+        noteIdToDescendantCountMap: {},
+        links: []
+    };
+
+    const mapRootNote = becca.getNote(req.params.noteId);
+
+    if (mapRootNote === null || mapRootNote.type === 'search') {
+        return ret;
+    }
+
+    let unfilteredNotes = [];
+    
+    for (const relation of mapRootNote.getRelations()) {
+        if (isIgnoredRelation(relation, 0)) {
+            continue;
+        }
+
+        const targetNote = relation.getTargetNote();
+
+        if (!targetNote || targetNote.isLabelTruthy('excludeFromNoteMap')) {
+            continue;
+        }
+
+        unfilteredNotes.push(targetNote);
+        console.log(`oriTargetNote ${targetNote.getTitleOrProtected()}`);
+    }
+
+    const noteIds = new Set(
+        unfilteredNotes
+            .filter(note => !note.hasLabel('excludeFromNoteMap'))
+            .map(note => note.noteId)
+    );
+
+    if (noteIds.size < 2) {
+        return ret;
+    }
+
+    let neighborLists = [];
+    for (const noteId of noteIds) {
+        let list = getNeighbors(becca.getNote(noteId), 1, 0);
+        neighborLists.push(list);
+    }
+
+    for (let i = 0; i < neighborLists.length; i++) {
+        console.log(`list ${i}: ${neighborLists[i].length}`);
+        for (const noteId of neighborLists[i]) {
+            console.log(`  ${noteId}  ${becca.getNote(noteId).getTitleOrProtected()}`);
+        }
+    }
+
+    for (const noteId of neighborLists[0]) {
+        let match = true;
+        for (let i = 1; i < neighborLists.length; i++) {
+            if (neighborLists[i].indexOf(noteId) < 0){
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            noteIds.add(noteId);
+        }
+    }
+
+
+    const noteIdsArray = Array.from(noteIds)
+
+    const notes = noteIdsArray.map(noteId => {
+        const note = becca.getNote(noteId);
+
+        return [
+            note.noteId,
+            note.getTitleOrProtected(),
+            note.type,
+            note.getLabelValue('color')
+        ];
+    });
+
+    const links = Object.values(becca.attributes).filter(rel => {
+        if (rel.type !== 'relation' || rel.name === 'relationMapLink' || rel.name === 'template' || rel.name === 'inherit') {
+            return false;
+        }
+        else if (!noteIds.has(rel.noteId) || !noteIds.has(rel.value)) {
+            return false;
+        }
+        else if (rel.name === 'imageLink') {
+            const parentNote = becca.getNote(rel.noteId);
+
+            return !parentNote.getChildNotes().find(childNote => childNote.noteId === rel.value);
+        }
+        else {
+            return true;
+        }
+    })
+    .map(rel => ({
+        id: `${rel.noteId}-${rel.name}-${rel.value}`,
+        sourceNoteId: rel.noteId,
+        targetNoteId: rel.value,
+        name: rel.name
+    }));
+
+    return {
+        notes: notes,
+        noteIdToDescendantCountMap: buildDescendantCountMap(noteIdsArray),
+        links: links
+    };
 }
 
 
@@ -468,6 +582,7 @@ module.exports = {
     getLinkMap,
     getTreeMap,
     getKeyrelMap,
+    getMultiRelMap,
     getBacklinkCount,
     getBacklinks
 };

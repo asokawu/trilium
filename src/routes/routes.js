@@ -335,6 +335,7 @@ function register(app) {
     apiRoute(PST, '/api/note-map/:noteId/tree', noteMapRoute.getTreeMap);
     apiRoute(PST, '/api/note-map/:noteId/link', noteMapRoute.getLinkMap);
     apiRoute(PST, '/api/note-map/:noteId/keyrel', noteMapRoute.getKeyrelMap);
+    apiRoute(PST, '/api/note-map/:noteId/multirel', noteMapRoute.getMultiRelMap);
     apiRoute(GET, '/api/note-map/:noteId/backlink-count', noteMapRoute.getBacklinkCount);
     apiRoute(GET, '/api/note-map/:noteId/backlinks', noteMapRoute.getBacklinks);
 
