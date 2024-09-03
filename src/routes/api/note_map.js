@@ -139,9 +139,13 @@ function getMultiRelMap(req) {
         return ret;
     }
 
+    let neighborDepth = 1;
+    if (mapRootNote.hasLabel("mapNeighborDepth"))
+        neighborDepth = mapRootNote.getLabelValue("mapNeighborDepth");
+
     let neighborLists = [];
     for (const noteId of noteIds) {
-        let list = getNeighbors(becca.getNote(noteId), 1, 0);
+        let list = getNeighbors(becca.getNote(noteId), neighborDepth, 0);
         neighborLists.push(list);
     }
 
@@ -238,7 +242,11 @@ function getKeyrelMap(req) {
         noteIds.delete(mapRootNote.noteId);
     }
 
-    for (const noteId of getNeighbors(mapRootNote, 1, 1)) {
+    let neighborDepth = 1;
+    if (mapRootNote.hasLabel("mapNeighborDepth"))
+        neighborDepth = mapRootNote.getLabelValue("mapNeighborDepth");
+
+    for (const noteId of getNeighbors(mapRootNote, neighborDepth, 1)) {
         noteIds.add(noteId);
     }
 
@@ -317,7 +325,11 @@ function getLinkMap(req) {
         noteIds.delete(mapRootNote.noteId);
     }
 
-    for (const noteId of getNeighbors(mapRootNote, 3)) {
+    let neighborDepth = 1;
+    if (mapRootNote.hasLabel("mapNeighborDepth"))
+        neighborDepth = mapRootNote.getLabelValue("mapNeighborDepth");
+
+    for (const noteId of getNeighbors(mapRootNote, neighborDepth)) {
         noteIds.add(noteId);
     }
 

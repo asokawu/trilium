@@ -34,8 +34,9 @@ const TPL = `<div class="note-map-widget" style="position: relative;">
       <button type="button" class="btn bx bx-sitemap" title="Tree map" data-type="tree"></button>
       <button type="button" class="btn bx bxl-graphql" title="KeyRel" data-type="keyrel"></button>
       <button type="button" class="btn bx bx-git-branch" title="MultiRel" data-type="multirel"></button>
+      <div><label for="neighbor-depth">neighbor-depth: </label><input id="neighbor-depth" type="number" class="neighbor-depth" value="1" min="1" max="3" /></div>
     </div>
-
+    
     <div class="style-resolver"></div>
 
     <div class="note-map-container"></div>
@@ -65,6 +66,11 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
             await attributeService.setLabel(this.noteId, 'mapType', type);
         });
 
+        let $neighborDepth = this.$widget.find(".neighbor-depth");
+        $neighborDepth.on("change",  async e => {
+            await attributeService.setLabel(this.noteId, 'mapNeighborDepth', e.target.value);
+        });
+
         super.doRender();
     }
 
@@ -88,6 +94,15 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
             textColor: this.rgb2hex(this.$container.css("color")),
             mutedTextColor: this.rgb2hex(this.$styleResolver.css("color"))
         };
+
+        let neighborDepth = 1;
+        if (this.note != null) 
+            neighborDepth = this.note.getLabelValue("mapNeighborDepth");
+
+        neighborDepth = Math.max(1, Math.min(neighborDepth, 3));
+        let $neighborDepth = this.$widget.find(".neighbor-depth");
+        $neighborDepth.attr('value',neighborDepth.toString());
+        $neighborDepth.val(neighborDepth.toString());
 
         this.mapType = this.note.getLabelValue("mapType");// === "tree" ? "tree" : "link";
         if (this.mapType == null) {
