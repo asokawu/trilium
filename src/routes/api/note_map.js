@@ -167,9 +167,6 @@ function getSameChildCntMap(req) {
         if (rel.type !== 'relation' || rel.name === 'relationMapLink' || rel.name === 'template' || rel.name === 'inherit') {
             return false;
         }
-        else if (rel.name.startsWith('SameChildCnt_') == false) {
-            return false;
-        }
         else if (!noteIds.has(rel.noteId) || !noteIds.has(rel.value)) {
             return false;
         }
@@ -178,7 +175,14 @@ function getSameChildCntMap(req) {
 
             return !parentNote.getChildNotes().find(childNote => childNote.noteId === rel.value);
         }
+        else if (rel.name.startsWith('SameChildCnt_') == false) {
+            return false;
+        }
         else {
+            let cnt = Number(rel.name.split('_')[1]);
+            if (cnt < filterValue) {
+                return false;
+            }
             return true;
         }
     })

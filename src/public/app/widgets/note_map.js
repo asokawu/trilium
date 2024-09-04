@@ -127,7 +127,7 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
 
         this.mapType = this.note.getLabelValue("mapType");// === "tree" ? "tree" : "link";
         if (this.mapType == null) {
-            this.mapType = "link";
+            this.mapType = "samechildcnt";
         }
 
         await libraryLoader.requireLibrary(libraryLoader.FORCE_GRAPH);
