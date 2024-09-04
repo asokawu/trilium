@@ -34,7 +34,9 @@ const TPL = `<div class="note-map-widget" style="position: relative;">
       <button type="button" class="btn bx bx-sitemap" title="Tree map" data-type="tree"></button>
       <button type="button" class="btn bx bxl-graphql" title="KeyRel" data-type="keyrel"></button>
       <button type="button" class="btn bx bx-git-branch" title="MultiRel" data-type="multirel"></button>
+      <button type="button" class="btn bx bx-shape-triangle" title="SameChildCnt" data-type="samechildcnt"></button>
       <div><label for="neighbor-depth">neighbor-depth: </label><input id="neighbor-depth" type="number" class="neighbor-depth" value="1" min="1" max="3" /></div>
+      <div><label for="filter-value">filter-value: </label><input id="filter-value" type="number" class="filter-value" value="5" min="1" /></div>
     </div>
     
     <div class="style-resolver"></div>
@@ -70,6 +72,10 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
         $neighborDepth.on("change",  async e => {
             await attributeService.setLabel(this.noteId, 'mapNeighborDepth', e.target.value);
         });
+        let $filterValue = this.$widget.find(".filter-value");
+        $filterValue.on("change",  async e => {
+            await attributeService.setLabel(this.noteId, 'mapFilterValue', e.target.value);
+        });
 
         super.doRender();
     }
@@ -96,13 +102,28 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
         };
 
         let neighborDepth = 1;
-        if (this.note != null) 
-            neighborDepth = this.note.getLabelValue("mapNeighborDepth");
+        if (this.note != null) {
+            let neighborDepth1 = this.note.getLabelValue("mapNeighborDepth");
+            if (neighborDepth1 != null)
+                neighborDepth = neighborDepth1;
+        }
 
         neighborDepth = Math.max(1, Math.min(neighborDepth, 3));
         let $neighborDepth = this.$widget.find(".neighbor-depth");
         $neighborDepth.attr('value',neighborDepth.toString());
         $neighborDepth.val(neighborDepth.toString());
+
+        let filterValue = 5;
+        if (this.note != null) 
+        {
+            let filterValue1 = this.note.getLabelValue("mapFilterValue");
+            if (filterValue1 != null)
+                filterValue = filterValue1;
+        }
+
+        let $filterValue = this.$widget.find(".filter-value");
+        $filterValue.attr('value',filterValue.toString());
+        $filterValue.val(filterValue.toString());
 
         this.mapType = this.note.getLabelValue("mapType");// === "tree" ? "tree" : "link";
         if (this.mapType == null) {
@@ -130,12 +151,12 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
             .warmupTicks(30)
             .linkDirectionalArrowLength(5)
             .linkDirectionalArrowRelPos(1)
-            .linkWidth(1)
-            .linkColor(() => this.css.mutedTextColor)
+            .linkWidth(link => this.getLinkWidth(link))
+            .linkColor(link => this.getLinkColor(link))
             .onNodeClick(node => appContext.tabManager.getActiveContext().setNote(node.id))
             .onNodeRightClick((node, e) => linkContextMenuService.openContextMenu(node.id, e));
 
-        if (this.mapType === 'link' || this.mapType === 'keyrel' || this.mapType === 'multirel') {
+        if (this.mapType === 'link' || this.mapType === 'keyrel' || this.mapType === 'multirel' || this.mapType === 'samechildcnt') {
             this.graph
                 .linkLabel(l => `${esc(l.source.name)} - <strong>${esc(l.name)}</strong> - ${esc(l.target.name)}`)
                 .linkCanvasObject((link, ctx) => this.paintLink(link, ctx))
@@ -156,6 +177,55 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
         this.graph.d3Force('charge').distanceMax(1000);
 
         this.renderData(data);
+    }
+
+    HSVtoRGB(h, s, v) {
+        let i, f, p1, p2, p3;
+        let r = 0, g = 0, b = 0;
+        if (s < 0) s = 0;
+        if (s > 1) s = 1;
+        if (v < 0) v = 0;
+        if (v > 1) v = 1;
+        h %= 360;
+        if (h < 0) h += 360;
+        h /= 60;
+        i = Math.floor(h);
+        f = h - i;
+        p1 = v * (1 - s);
+        p2 = v * (1 - s * f);
+        p3 = v * (1 - s * (1 - f));
+        switch(i) {
+            case 0: r = v;  g = p3; b = p1; break;
+            case 1: r = p2; g = v;  b = p1; break;
+            case 2: r = p1; g = v;  b = p3; break;
+            case 3: r = p1; g = p2; b = v;  break;
+            case 4: r = p3; g = p1; b = v;  break;
+            case 5: r = v;  g = p1; b = p2; break;
+        }
+        return 'rgb(' + Math.round(r * 255) + ',' + Math.round(g * 255) + ',' + Math.round(b * 255) + ')';
+    }
+   
+
+    getLinkColor(link) {
+        if (this.mapType === 'samechildcnt') {
+            // let r = 1;
+            // let g = 1;
+            // let b = 1;
+            // let color = `rgb(${r}, ${g}, ${b})`;
+            let color = this.HSVtoRGB(Math.max(0, 180 - link.weight * 2), 1, 1)
+            let hex =  this.rgb2hex(color);
+            // console.log(`link weight: ${link.weight} color: ${color} hex: ${hex}`);
+            return hex;
+        }
+        return this.css.mutedTextColor;
+    }
+
+    getLinkWidth(link){
+        if (this.mapType === 'samechildcnt') {
+            return link.weight / 10;
+        }
+        else
+            return 1;
     }
 
     getMapRootNoteId() {
@@ -299,7 +369,8 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
                 id: `${link.sourceNoteId}-${link.targetNoteId}`,
                 source: link.sourceNoteId,
                 target: link.targetNoteId,
-                name: link.names.join(", ")
+                name: link.names.join(", "),
+                weight: link.weight
             }))
         };
     }
@@ -319,7 +390,8 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
                     id: key,
                     sourceNoteId: link.sourceNoteId,
                     targetNoteId: link.targetNoteId,
-                    names: [link.name]
+                    names: [link.name],
+                    weight: link.weight
                 }
             }
         }
@@ -373,6 +445,20 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
             }
         }
         else if (this.mapType === 'multirel') {
+            const noteIdToLinkCount = {};
+
+            for (const link of resp.links) {
+                noteIdToLinkCount[link.targetNoteId] = 1 + (noteIdToLinkCount[link.targetNoteId] || 0);
+            }
+            for (const [noteId] of resp.notes) {
+                this.noteIdToSizeMap[noteId] = 4;
+
+                if (noteId in noteIdToLinkCount) {
+                    this.noteIdToSizeMap[noteId] += Math.min(Math.pow(noteIdToLinkCount[noteId], 0.5), 15);
+                }
+            }
+        }
+        else if (this.mapType === 'samechildcnt') {
             const noteIdToLinkCount = {};
 
             for (const link of resp.links) {

@@ -35,12 +35,22 @@ function buildDescendantCountMap(noteIdsToCount) {
 }
 
 
-function isIgnoredRelation(relation, type = 0) {
+function isIgnoredRelation(relation, type = 0, param1 = 0) {
     if (type === 0) {
         return ['relationMapLink', 'template', 'inherit', 'image', 'ancestor'].includes(relation.name);
     }
     else if (type === 1) {
         return ['relationMapLink', 'template', 'inherit', 'image', 'ancestor', 'internalLink'].includes(relation.name);
+    }
+    else if (type === 2) {
+        if (relation.name.startsWith('SameChildCnt_') == false)
+            return true;
+        
+        let cnt = Number(relation.name.split('_')[1])
+        if (cnt < param1)
+            return true;
+
+        return false;
     }
 }
 
@@ -50,7 +60,7 @@ function isIgnoredRelation(relation, type = 0) {
  * @param {int} depth
  * @returns {string[]} noteIds
  */
-function getNeighbors(note, depth, type=0) {
+function getNeighbors(note, depth, type=0, param1 = 0) {
     if (depth === 0) {
         return [];
     }
@@ -59,7 +69,7 @@ function getNeighbors(note, depth, type=0) {
 
     // forward links
     for (const relation of note.getRelations()) {
-        if (isIgnoredRelation(relation, type)) {
+        if (isIgnoredRelation(relation, type, param1)) {
             continue;
         }
 
@@ -71,14 +81,14 @@ function getNeighbors(note, depth, type=0) {
 
         retNoteIds.push(targetNote.noteId);
 
-        for (const noteId of getNeighbors(targetNote, depth - 1, type)) {
+        for (const noteId of getNeighbors(targetNote, depth - 1, type, param1)) {
             retNoteIds.push(noteId);
         }
     }
 
     // backward links
     for (const relation of note.getTargetRelations()) {
-        if (isIgnoredRelation(relation, type)) {
+        if (isIgnoredRelation(relation, type, param1)) {
             continue;
         }
 
@@ -90,13 +100,103 @@ function getNeighbors(note, depth, type=0) {
 
         retNoteIds.push(sourceNote.noteId);
 
-        for (const noteId of getNeighbors(sourceNote, depth - 1, type)) {
+        for (const noteId of getNeighbors(sourceNote, depth - 1, type, param1)) {
             retNoteIds.push(noteId);
         }
     }
 
     return retNoteIds;
 }
+
+
+
+function getSameChildCntMap(req) {
+    const mapRootNote = becca.getNote(req.params.noteId);
+    // if the map root itself has exclude attribute (journal typically) then there wouldn't be anything to display, so
+    // we'll just ignore it
+    const ignoreExcludeFromNoteMap = mapRootNote.hasLabel('excludeFromNoteMap');
+    let unfilteredNotes;
+
+    if (mapRootNote.type === 'search') {
+        // for search notes we want to consider the direct search results only without the descendants
+        unfilteredNotes = mapRootNote.getSearchResultNotes();
+    } else {
+        unfilteredNotes = mapRootNote.getSubtree({
+            includeArchived: false,
+            resolveSearch: true,
+            includeHidden: mapRootNote.isInHiddenSubtree()
+        }).notes;
+    }
+
+    const noteIds = new Set(
+        unfilteredNotes
+            .filter(note => ignoreExcludeFromNoteMap || !note.hasLabel('excludeFromNoteMap'))
+            .map(note => note.noteId)
+    );
+
+    if (mapRootNote.type === 'search') {
+        noteIds.delete(mapRootNote.noteId);
+    }
+
+    let neighborDepth = 1;
+    if (mapRootNote.hasLabel("mapNeighborDepth"))
+        neighborDepth = mapRootNote.getLabelValue("mapNeighborDepth");
+
+    let filterValue = 5;
+    if (mapRootNote.hasLabel("mapFilterValue"))
+        filterValue = mapRootNote.getLabelValue("mapFilterValue");
+
+    for (const noteId of getNeighbors(mapRootNote, neighborDepth, 2, filterValue)) {
+        noteIds.add(noteId);
+    }
+
+    const noteIdsArray = Array.from(noteIds)
+
+    const notes = noteIdsArray.map(noteId => {
+        const note = becca.getNote(noteId);
+
+        return [
+            note.noteId,
+            note.getTitleOrProtected(),
+            note.type,
+            note.getLabelValue('color')
+        ];
+    });
+
+    const links = Object.values(becca.attributes).filter(rel => {
+        if (rel.type !== 'relation' || rel.name === 'relationMapLink' || rel.name === 'template' || rel.name === 'inherit') {
+            return false;
+        }
+        else if (rel.name.startsWith('SameChildCnt_') == false) {
+            return false;
+        }
+        else if (!noteIds.has(rel.noteId) || !noteIds.has(rel.value)) {
+            return false;
+        }
+        else if (rel.name === 'imageLink') {
+            const parentNote = becca.getNote(rel.noteId);
+
+            return !parentNote.getChildNotes().find(childNote => childNote.noteId === rel.value);
+        }
+        else {
+            return true;
+        }
+    })
+    .map(rel => ({
+        id: `${rel.noteId}-${rel.name}-${rel.value}`,
+        sourceNoteId: rel.noteId,
+        targetNoteId: rel.value,
+        name: Number(rel.name.split('_')[1]),
+        weight: Number(rel.name.split('_')[1])
+    }));
+
+    return {
+        notes: notes,
+        noteIdToDescendantCountMap: buildDescendantCountMap(noteIdsArray),
+        links: links
+    };
+}
+
 
 
 function getMultiRelMap(req) {
@@ -595,6 +695,7 @@ module.exports = {
     getTreeMap,
     getKeyrelMap,
     getMultiRelMap,
+    getSameChildCntMap,
     getBacklinkCount,
     getBacklinks
 };
