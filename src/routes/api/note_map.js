@@ -150,7 +150,11 @@ function getSameChildCntMap(req) {
         noteIds.add(noteId);
     }
 
-    const noteIdsArray = Array.from(noteIds)
+    const noteIdsArray = Array.from(noteIds).filter(noteId => {
+        if (becca.getNote(noteId).hasAttributeWithPrefix('relation', 'SameChildCnt_'))
+            return true;
+        return false;
+    });
 
     const notes = noteIdsArray.map(noteId => {
         const note = becca.getNote(noteId);

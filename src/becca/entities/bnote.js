@@ -480,6 +480,20 @@ class BNote extends AbstractBeccaEntity {
         );
     }
 
+        /**
+     * @param type
+     * @param name
+     * @param [value]
+     * @returns {boolean}
+     */
+    hasAttributeWithPrefix(type, prefix, value = null) {
+        return !!this.getAttributes().find(attr =>
+            attr.name.startsWith(prefix)
+            && (value === undefined || value === null || attr.value === value)
+            && attr.type === type
+        );
+    }
+
     getAttributeCaseInsensitive(type, name, value) {
         name = name.toLowerCase();
         value = value ? value.toLowerCase() : null;
