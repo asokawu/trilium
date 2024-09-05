@@ -71,10 +71,12 @@ export default class NoteMapWidget extends NoteContextAwareWidget {
         let $neighborDepth = this.$widget.find(".neighbor-depth");
         $neighborDepth.on("change",  async e => {
             await attributeService.setLabel(this.noteId, 'mapNeighborDepth', e.target.value);
+            await this.refresh();
         });
         let $filterValue = this.$widget.find(".filter-value");
         $filterValue.on("change",  async e => {
             await attributeService.setLabel(this.noteId, 'mapFilterValue', e.target.value);
+            await this.refresh();
         });
 
         super.doRender();
