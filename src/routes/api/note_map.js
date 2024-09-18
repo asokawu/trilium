@@ -43,6 +43,12 @@ function isIgnoredRelation(relation, type = 0, param1 = 0) {
         return ['relationMapLink', 'template', 'inherit', 'image', 'ancestor', 'internalLink'].includes(relation.name);
     }
     else if (type === 2) {
+        if (relation.name === null)
+        {
+            console.log(`relation not have name: ${relation}`);
+            return true;
+        }
+
         if (relation.name.startsWith('SameChildCnt_') == false)
             return true;
         
@@ -172,6 +178,10 @@ function getSameChildCntMap(req) {
             return false;
         }
         else if (!noteIds.has(rel.noteId) || !noteIds.has(rel.value)) {
+            return false;
+        }
+        else if (rel.name === null){
+            console.log(`relation not have name: ${rel.noteId}, ${rel}`);
             return false;
         }
         else if (rel.name === 'imageLink') {
